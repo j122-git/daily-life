@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Nunito:wght@700;800&display=swap');
+:root{
+  --bg:#fbf7ef;--paper:#fffdf8;--navy:#163652;--green:#0f806a;--green2:#d8f0e7;
+  --peach:#f8d0c0;--yellow:#f9e9ad;--lav:#dfd2f6;--mint:#cde9dc;--line:#e5e1d7;
+  --muted:#71808a;--shadow:0 5px 18px rgba(24,54,82,.07);--r:18px;
+}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--navy);font-family:"DM Sans",sans-serif}
+button{font:inherit;border:0;cursor:pointer}.shell{max-width:460px;margin:auto;min-height:100vh;background:var(--bg);padding-bottom:82px}
+.header{padding:24px 20px 10px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-family:Nunito;font-size:26px;font-weight:800;letter-spacing:-1px}.avatar{width:38px;height:38px;border:1px solid var(--line);border-radius:50%;background:var(--paper);font-size:20px}
+.page{padding:0 20px}.eyebrow{font-size:13px;color:var(--muted);font-weight:600}.hello{font-size:23px;line-height:1.12;margin:6px 0 18px;font-weight:700}
+.modules{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.module{border-radius:15px;padding:12px 5px;text-align:center;color:var(--navy)}
+.module .ico{font-size:22px;margin-bottom:5px}.module span{font-size:11px;font-weight:700}.m-meal{background:var(--mint)}.m-todo{background:var(--peach)}.m-shop{background:var(--lav)}.m-family{background:var(--yellow)}
+.section-head{display:flex;justify-content:space-between;align-items:center;margin:23px 0 10px}.section-head h2{font-size:17px;margin:0}.link{font-size:12px;color:var(--green);font-weight:700;background:none}
+.card{background:var(--paper);border:1px solid #eee9df;border-radius:16px;box-shadow:var(--shadow);margin-bottom:8px}
+.row{display:flex;align-items:center;gap:12px;padding:13px 14px}.thumb{width:54px;height:54px;border-radius:13px;object-fit:cover;background:var(--mint)}.grow{flex:1;min-width:0}.title{font-size:14px;font-weight:700}.sub{font-size:12px;color:var(--muted);margin-top:3px}.chev{color:#9aa2a4;font-size:20px}
+.meal-week{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;overflow:hidden}.day{border-radius:14px;padding:11px 9px;min-height:78px}.day small{display:block;font-weight:700;font-size:10px;color:var(--muted);margin-bottom:6px}.day b{font-size:11px;line-height:1.2;display:block}.d1{background:var(--mint)}.d2{background:var(--peach)}.d3{background:var(--lav)}.d4{background:var(--yellow)}
+.bottom{position:fixed;bottom:0;left:0;right:0;margin:auto;max-width:460px;height:68px;background:rgba(255,253,248,.96);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);padding:7px 8px calc(7px + env(safe-area-inset-bottom));z-index:5}.nav{background:none;color:var(--muted);font-size:10px;font-weight:700}.nav.active{color:var(--green)}.nav .ni{display:block;font-size:20px;margin-bottom:2px}
+.hero{background:var(--mint);border-radius:20px;overflow:hidden;margin-top:8px}.hero-img{height:160px;width:100%;object-fit:cover;display:block}.recipe-body{padding:18px}.recipe-body h1{font-family:Nunito;font-size:25px;margin:0 0 8px}.meta{display:flex;gap:15px;font-size:12px;color:#53666c;margin-bottom:14px}.desc{font-size:13px;line-height:1.5;color:#52636b}.ingredient{display:flex;gap:10px;align-items:center;padding:8px 0;font-size:13px}.circle{width:17px;height:17px;border:1.5px solid #87969a;border-radius:50%;flex:none}
+.back{background:none;font-size:25px;color:var(--navy)}.screen-title{font-family:Nunito;font-size:23px;margin:0}.filterbar{display:flex;gap:7px;overflow:auto;margin:12px 0 18px}.pill{background:var(--paper);border:1px solid var(--line);padding:8px 14px;border-radius:18px;font-size:11px;white-space:nowrap}.pill.active{background:var(--green);border-color:var(--green);color:white}.todo-group{margin:20px 0 8px;display:flex;justify-content:space-between}.todo-group b{font-size:15px}.todo-group span{font-size:11px;color:var(--muted)}.check{width:20px;height:20px;border:1.5px solid #91a0a2;border-radius:50%;background:transparent;flex:none}.check.done{background:var(--green);border-color:var(--green);color:white}.tag{display:inline-block;border-radius:9px;padding:3px 7px;font-size:9px;margin-top:5px;background:var(--lav)}.tag.Shopping{background:var(--mint)}.tag.Home{background:var(--peach)}.tag.Family{background:var(--yellow)}
+.plus{width:38px;height:38px;border-radius:50%;background:var(--green);color:#fff;font-size:25px}
+.empty{padding:30px;text-align:center;color:var(--muted);font-size:13px}.loading{padding:40px;text-align:center;color:var(--muted)}
+.toast{position:fixed;bottom:82px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 14px;border-radius:12px;font-size:12px;z-index:10}
