@@ -1,62 +1,55 @@
-const API = window.DAILY_LIFE_API || "";
-const DEMO = {
-  recipes:[
-    {id:"demo-thai",name:"Thai green curry",cuisine:"Thai",time:"30 mins",servings:4,difficulty:"Easy",
-     description:"A fresh and flavourful Thai classic. Quick enough for a busy weeknight and great with steamed rice.",
-     image:"",ingredients:["2 tbsp vegetable oil","1 onion, finely sliced","2 garlic cloves, crushed","1 green chilli, sliced","400ml coconut milk","2 tbsp green curry paste","400g chicken, sliced (or tofu)","1 red pepper, sliced","Handful of basil leaves","Juice of 1 lime"]}
-  ],
-  todos:[
-    {id:"d1",task:"Pick up dry cleaning",due:"Today",category:"Errands",status:"To do"},
-    {id:"d2",task:"Shop for the week",due:"Today",category:"Shopping",status:"To do"},
-    {id:"d3",task:"Prep ingredients for dinner",due:"Today",category:"Home",status:"To do"},
-    {id:"d4",task:"Book dentist appointment",due:"Tomorrow",category:"Personal",status:"To do"},
-    {id:"d5",task:"Water the plants",due:"Tomorrow",category:"Home",status:"To do"},
-    {id:"d6",task:"Birthday present for Sophie",due:"Upcoming",category:"Family",status:"To do"}
-  ],
-  week:["Pasta Bolognese","Chicken Stir Fry","Tacos","Fish & Veg"]
-};
-async function api(path, options={}) {
-  if(!API) return null;
-  try { const r=await fetch(API.replace(/\/$/,"")+path,{...options,headers:{"Content-Type":"application/json",...(options.headers||{})}}); if(!r.ok) throw Error(); return await r.json(); } catch(e){return null}
+/* Daily Life frontend — Cloudflare Worker + Airtable */
+const API=(window.DAILY_LIFE_API||"https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev").replace(/\/$/,"");
+const APP_TOKEN=window.DAILY_LIFE_APP_TOKEN||"PASTE_YOUR_APP_TOKEN_HERE";
+let state={recipes:[],todos:[],mealPlan:[]};
+
+async function api(path,options={}){
+  const r=await fetch(API+path,{...options,headers:{"Content-Type":"application/json","X-App-Token":APP_TOKEN,...(options.headers||{})}});
+  let d=null; try{d=await r.json()}catch{}
+  if(!r.ok) throw Error(d?.error||`Request failed (${r.status})`);
+  return d;
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-function imgOrIcon(r){return r.image?`<img class="thumb" src="${esc(r.image)}">`:`<div class="thumb" style="display:grid;place-items:center;font-size:24px">🍲</div>`}
-function nav(active){return `<nav class="bottom"><button class="nav ${active==="home"?"active":""}" onclick="show('home')"><span class="ni">⌂</span>Home</button><button class="nav ${active==="recipes"?"active":""}" onclick="show('recipes')"><span class="ni">♨</span>Recipes</button><button class="nav ${active==="todo"?"active":""}" onclick="show('todo')"><span class="ni">✓</span>Lists</button><button class="nav"><span class="ni">•••</span>More</button></nav>`}
-function header(title,back=false){return `<header class="header">${back?`<button class="back" onclick="show('home')">‹</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1><button class="avatar">♙</button></header>`}
-async function getData(){
- const [rs,ts,ms]=await Promise.all([api("/api/recipes"),api("/api/todos"),api("/api/meal-plan")]);
- return {recipes:rs?.recipes||DEMO.recipes,todos:ts?.todos||DEMO.todos,week:ms?.week||DEMO.week};
-}
-async function home(){
- const d=await getData(), r=d.recipes[0], remaining=d.todos.filter(x=>x.status!=="Done").length;
- return `<div class="shell">${header()}<main class="page"><div class="eyebrow">Good morning,</div><div class="hello">The Wilsons ☀️</div>
- <div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">♜</div><span>Meal plan</span></button><button class="module m-todo" onclick="show('todo')"><div class="ico">✓</div><span>To do</span></button><button class="module m-shop"><div class="ico">🛒</div><span>Shopping</span></button><button class="module m-family"><div class="ico">♧</div><span>Family</span></button></div>
- <div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>
- <div class="card row" onclick="show('recipe', '${esc(r.id)}')">${imgOrIcon(r)}<div class="grow"><div class="eyebrow">Dinner</div><div class="title">${esc(r.name)}</div></div><div class="chev">›</div></div>
- ${d.todos.slice(0,3).map(t=>`<div class="card row" onclick="show('todo')"><button class="check ${t.status==="Done"?"done":""}" onclick="event.stopPropagation();toggleTodo('${t.id}')">${t.status==="Done"?"✓":""}</button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.due)}</div></div><div class="chev">›</div></div>`).join("")}
- <div class="section-head"><h2>This week's meal plan</h2><button class="link" onclick="show('recipes')">View all</button></div>
- <div class="meal-week">${d.week.map((x,i)=>`<div class="day d${(i%4)+1}"><small>${["Mon","Tue","Wed","Thu"][i]}</small><b>${esc(x)}</b></div>`).join("")}</div></main>${nav("home")}</div>`
-}
-async function recipes(){
- const d=await getData(); return `<div class="shell">${header("Recipes",true)}<main class="page"><div class="filterbar"><span class="pill active">All</span><span class="pill">Quick</span><span class="pill">Family</span><span class="pill">Favourites</span></div>${d.recipes.map(r=>`<div class="card row" onclick="show('recipe','${r.id}')">${imgOrIcon(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${esc(r.cuisine||"")} · ${esc(r.time||"")} ${r.servings?`· ${r.servings} servings`:""}</div></div><div class="chev">›</div></div>`).join("")||'<div class="empty">No recipes yet.</div>'}</main>${nav("recipes")}</div>`
-}
-async function recipe(id){
- const d=await getData(); let r=d.recipes.find(x=>x.id===id)||d.recipes[0];
- if(API){const full=await api("/api/recipes/"+encodeURIComponent(id)); if(full?.recipe) r=full.recipe}
- return `<div class="shell">${header(r.name,true)}<main class="page"><article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px">🍲</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta"><span>◷ ${esc(r.time||"30 mins")}</span><span>♜ ${r.servings||4} servings</span><span>♧ ${esc(r.difficulty||"Easy")}</span></div><p class="desc">${esc(r.description||"A family favourite from your recipe collection.")}</p><h3>Ingredients</h3>${(r.ingredients||[]).map(i=>`<div class="ingredient"><span class="circle"></span>${esc(i)}</div>`).join("")}<button class="module m-meal" style="width:100%;margin-top:14px;padding:14px" onclick="toast('Added to meal plan')">▣ &nbsp; Add to meal plan</button></div></article></main></div>`
-}
+function iso(d=new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
+function today(){return iso()}
+function tomorrow(){const d=new Date();d.setDate(d.getDate()+1);return iso(d)}
+function dateLabel(s){if(!s)return "";const d=new Date(s+"T00:00:00");return isNaN(d)?s:d.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+function bucket(t){if(t.bucket)return t.bucket;if(t.due===today())return"today";if(t.due===tomorrow())return"tomorrow";return"upcoming"}
+function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:24px">🍲</div>`}
+function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">⌂</span>Home</button><button class="nav ${a==="recipes"?"active":""}" onclick="show('recipes')"><span class="ni">♨</span>Recipes</button><button class="nav ${a==="todo"?"active":""}" onclick="show('todo')"><span class="ni">✓</span>Lists</button><button class="nav" onclick="toast('More coming soon')"><span class="ni">•••</span>More</button></nav>`}
+function header(title="",back=false){return `<header class="header">${back?`<button class="back" onclick="show('home')">‹</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1><button class="avatar" onclick="toast('Family profile coming soon')">♙</button></header>`}
+async function load(kind){const d=await api(kind==="recipes"?"/api/recipes":kind==="todos"?"/api/todos":"/api/meal-plan");if(kind==="recipes")state.recipes=d.recipes||[];if(kind==="todos")state.todos=(d.todos||[]).map(t=>({...t,bucket:bucket(t)}));if(kind==="mealPlan")state.mealPlan=d.mealPlan||[];return d}
+async function all(){await Promise.all([load("recipes"),load("todos"),load("mealPlan")]);return state}
+function recipeFor(item){return state.recipes.find(r=>r.id===item?.recipeId)}
+function week(){const out=[];const d=new Date();const wd=d.getDay();d.setDate(d.getDate()+(wd===0?-6:1-wd));for(let i=0;i<7;i++){const x=new Date(d);x.setDate(d.getDate()+i);const ds=iso(x), meals=state.mealPlan.filter(m=>m.date===ds), m=meals.find(x=>/dinner/i.test(x.meal||""))||meals[0], r=recipeFor(m);out.push(`<div class="day d${i%4+1}"><small>${x.toLocaleDateString("en-GB",{weekday:"short"})}</small><b>${esc(r?.name||m?.recipeName||"—")}</b></div>`)}return out.join("")}
+async function home(){await all();const meal=state.mealPlan.find(m=>m.date===today()),r=recipeFor(meal)||state.recipes[0],ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3);return `<div class="shell">${header()}<main class="page"><div class="eyebrow">Good morning,</div><div class="hello">The Wilsons ☀️</div><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">♜</div><span>Meal plan</span></button><button class="module m-todo" onclick="show('todo')"><div class="ico">✓</div><span>To do (${state.todos.filter(t=>t.status!=="Done").length})</span></button><button class="module m-shop" onclick="toast('Shopping list coming next')"><div class="ico">🛒</div><span>Shopping</span></button><button class="module m-family" onclick="toast('Family coming next')"><div class="ico">♧</div><span>Family</span></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${r?`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="eyebrow">${esc(meal?.meal||"Meal")}</div><div class="title">${esc(r.name)}</div></div><div class="chev">›</div></div>`:`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">›</div></div>`).join("")}<div class="section-head"><h2>This week's meal plan</h2><button class="link" onclick="show('recipes')">View all</button></div><div class="meal-week">${week()}</div></main>${nav("home")}</div>`}
+async function recipes(){await load("recipes");return `<div class="shell">${header("Recipes",true)}<main class="page"><div class="filterbar"><span class="pill active">All</span><span class="pill">Quick</span><span class="pill">Family</span><span class="pill">Favourites</span></div>${state.recipes.map(r=>`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${esc(r.cuisine||"")}${r.cookingTime?` · ${esc(r.cookingTime)}`:""}${r.servings?` · ${esc(r.servings)} servings`:""}</div></div><div class="chev">›</div></div>`).join("")||'<div class="empty">No recipes found.</div>'}</main>${nav("recipes")}</div>`}
+async function recipe(id){const d=await api(`/api/recipes/${encodeURIComponent(id)}`),r=d.recipe;if(!r)throw Error("Recipe not found");const ing=Array.isArray(r.ingredients)?r.ingredients:[];return `<div class="shell">${header(r.name,true)}<main class="page"><article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px">🍲</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>◷ ${esc(r.cookingTime)}</span>`:""}${r.servings?`<span>♜ ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>♧ ${esc(r.difficulty)}</span>`:""}</div>${r.notes||r.recipeText?`<p class="desc">${esc(r.notes||r.recipeText)}</p>`:""}${ing.length?`<h3>Ingredients</h3>${ing.map(x=>`<div class="ingredient"><span class="circle"></span>${esc(typeof x==="string"?x:JSON.stringify(x))}</div>`).join("")}`:""}<button class="module m-meal" style="width:100%;margin-top:14px;padding:14px" onclick="toast('Meal-plan editing coming next')">▣ &nbsp; Add to meal plan</button></div></article></main></div>`}
 async function todo(){
- const d=await getData(); const groups=["Today","Tomorrow","Upcoming"];
- const sections=groups.map(g=>{
-   const ts=d.todos.filter(t=>t.due===g);
-   if(!ts.length)return "";
-   const items=ts.map(t=>`<div class="card row"><button class="check ${t.status==="Done"?"done":""}" onclick="toggleTodo(\'${t.id}\')">${t.status==="Done"?"✓":""}</button><div class="grow"><div class="title">${esc(t.task)}</div><span class="tag ${esc(t.category)}">${esc(t.category)}</span></div><div class="chev">›</div></div>`).join("");
-   return `<div class="todo-group"><b>${g}</b><span>${ts.filter(t=>t.status!=="Done").length} remaining</span></div>${items}`;
- }).join("");
- return `<div class="shell">${header("To do",false)}<main class="page"><div style="display:flex;justify-content:space-between;align-items:center"><h1 class="screen-title">To do</h1><button class="plus" onclick="toast(\'Add task coming next\')">+</button></div><div class="filterbar"><span class="pill active">All</span><span class="pill">Today</span><span class="pill">Upcoming</span><span class="pill">Done</span></div>${sections}</main>${nav("todo")}</div>`
+  await load("todos");
+  const groups=[["today","Today"],["tomorrow","Tomorrow"],["upcoming","Upcoming"]];
+  let sections="";
+  for(const [b,label] of groups){
+    const ts=state.todos.filter(t=>t.bucket===b);
+    if(!ts.length) continue;
+    sections += `<div class="todo-group"><b>${label}</b><span>${ts.filter(t=>t.status!=="Done").length} remaining</span></div>`;
+    for(const t of ts){
+      const tag=t.category?'<span class="tag '+esc(t.category)+'">'+esc(t.category)+'</span>':'';
+      const due=t.due?'<div class="sub">'+dateLabel(t.due)+'</div>':'';
+      sections += '<div class="card row">'+
+        '<button class="check '+(t.status==="Done"?"done":"")+'" onclick="toggleTodo(\''+esc(t.id)+'\')">'+(t.status==="Done"?"✓":"")+'</button>'+ 
+        '<div class="grow" onclick="editTodo(\''+esc(t.id)+'\')" style="cursor:pointer">'+
+        '<div class="title">'+esc(t.task)+'</div>'+tag+due+'</div>'+ 
+        '<button class="chev" onclick="editTodo(\''+esc(t.id)+'\')">›</button></div>';
+    }
+  }
+  return `<div class="shell">${header("To do",false)}<main class="page"><div style="display:flex;justify-content:space-between;align-items:center"><h1 class="screen-title">To do</h1><button class="plus" onclick="addTodo()">+</button></div><div class="filterbar"><span class="pill active">All</span><span class="pill">Today</span><span class="pill">Upcoming</span><span class="pill">Done</span></div>${sections||'<div class="empty">No tasks yet. Add your first task.</div>'}</main>${nav("todo")}</div>`;
 }
-async function toggleTodo(id){if(id.startsWith("d")){DEMO.todos=DEMO.todos.map(t=>t.id===id?{...t,status:t.status==="Done"?"To do":"Done"}:t);render("todo");return} await api("/api/todos/"+id,{method:"PATCH",body:JSON.stringify({status:"Done"})});render("todo")}
-function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),1800)}
-async function show(page,id){window.scrollTo(0,0);document.getElementById("app").innerHTML='<div class="shell loading">Loading…</div>';let html=page==="home"?await home():page==="recipes"?await recipes():page==="recipe"?await recipe(id):await todo();document.getElementById("app").innerHTML=html}
-async function render(p="home"){await show(p)}
-render();
+async function addTodo(){const task=prompt("Task");if(!task?.trim())return;const due=prompt("Due date (YYYY-MM-DD)",today());if(due===null)return;const category=prompt("Category: Home / Shopping / Errands / Personal / Family","Home");if(category===null)return;try{await api("/api/todos",{method:"POST",body:JSON.stringify({task:task.trim(),due:due||null,category:category.trim()||"Home",status:"To do"})});toast("Task added");show("todo")}catch(e){toast("Couldn't add task: "+e.message)}}
+async function editTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;const task=prompt("Task",t.task||"");if(task===null)return;const due=prompt("Due date (YYYY-MM-DD)",t.due||today());if(due===null)return;const category=prompt("Category",t.category||"Home");if(category===null)return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({task:task.trim(),due:due||null,category:category.trim()||null})});toast("Task updated");show("todo")}catch(e){toast("Couldn't update task: "+e.message)}}
+async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status:t.status==="Done"?"To do":"Done"})});show("todo")}catch(e){toast("Couldn't update task: "+e.message)}}
+async function deleteTodo(id){if(!confirm("Delete this task?"))return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"DELETE"});toast("Task deleted");show("todo")}catch(e){toast("Couldn't delete task: "+e.message)}}
+function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
+function errorScreen(e){return `<div class="shell">${header()}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="module m-meal" style="width:100%;margin-top:14px;padding:14px" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
+async function show(page,id){scrollTo(0,0);document.getElementById("app").innerHTML='<div class="shell loading">Loading…</div>';try{let h=page==="home"?await home():page==="recipes"?await recipes():page==="recipe"?await recipe(id):await todo();document.getElementById("app").innerHTML=h}catch(e){console.error(e);document.getElementById("app").innerHTML=errorScreen(e)}}
+show("home");
