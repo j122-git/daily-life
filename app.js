@@ -1,5 +1,5 @@
 /* Daily Life frontend — Cloudflare Worker + Airtable */
-const API=(window.DAILY_LIFE_API||"https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev").replace(/\/$/,"");
+const API=(window.DAILY_LIFE_API||"https://baby-app.thibaud-guerrero.workers.dev").replace(/\/$/,"");
 let APP_TOKEN=localStorage.getItem("dailyLifeAppToken")||"";
 let state={recipes:[],todos:[],mealPlan:[]};
 
