@@ -1,20 +1,9 @@
 {
   "name": "Daily Life",
   "short_name": "Daily Life",
-  "start_url": "./",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#fbf7ef",
   "theme_color": "#0f806a",
-  "icons": [
-    {
-      "src": "./icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "./icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
+  "icons": []
 }
