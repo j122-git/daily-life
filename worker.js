@@ -220,6 +220,17 @@ export default {
 
 
     /*
+     * GET /api/todo-options
+     */
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/todo-options"
+    ) {
+      return await getTodoOptions(env, corsHeaders);
+    }
+
+
+    /*
      * POST /api/todos
      */
     if (
@@ -796,6 +807,39 @@ async function getTodos(
     todos
   }, 200, corsHeaders);
 
+}
+
+
+/* =========================================================
+   TODO OPTIONS — AIRTABLE FIELD CONFIGURATION
+   ========================================================= */
+
+async function getTodoOptions(env, corsHeaders) {
+  const url = `https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`;
+  const response = await fetch(url, {
+    headers: { "Authorization": `Bearer ${env.AIRTABLE_TOKEN}` }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    return json({
+      error: "Airtable schema request failed",
+      details: data
+    }, 502, corsHeaders);
+  }
+
+  const table = (data.tables || []).find(t => t.id === TODOS_TABLE_ID);
+  const fields = table?.fields || [];
+  const categoryField = fields.find(f => f.name === "Category");
+  const statusField = fields.find(f => f.name === "Status");
+
+  const choices = field => Array.isArray(field?.options?.choices)
+    ? field.options.choices.map(c => c.name).filter(Boolean)
+    : [];
+
+  return json({
+    categories: choices(categoryField),
+    statuses: choices(statusField)
+  }, 200, corsHeaders);
 }
 
 
