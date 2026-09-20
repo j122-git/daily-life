@@ -3,6 +3,29 @@ const API=(window.DAILY_LIFE_API||"https://daily-life.thibaud-guerrero.workers.d
 let APP_TOKEN=localStorage.getItem("dailyLifeAppToken")||"";
 let state={recipes:[],todos:[],mealPlan:[],todoOptions:{categories:[],statuses:[]}};
 
+// Household task owners are intentionally kept local to the app.
+// Add another initial here later without needing an Airtable users table.
+const TASK_OWNERS=["T","B"];
+const TODO_OWNER_STORAGE_KEY="dailyLifeTodoOwners";
+
+function getTodoOwners(){
+  try{return JSON.parse(localStorage.getItem(TODO_OWNER_STORAGE_KEY)||"{}")}catch{return {}}
+}
+function getTodoOwner(id){
+  const owners=getTodoOwners();
+  return owners[id]||TASK_OWNERS[0];
+}
+function setTodoOwner(id,owner){
+  if(!id)return;
+  const owners=getTodoOwners();
+  owners[id]=TASK_OWNERS.includes(owner)?owner:TASK_OWNERS[0];
+  localStorage.setItem(TODO_OWNER_STORAGE_KEY,JSON.stringify(owners));
+}
+function ownerBadge(owner){
+  const value=TASK_OWNERS.includes(owner)?owner:TASK_OWNERS[0];
+  return `<span class="owner-badge" aria-label="Owner: ${esc(value)}">${esc(value)}</span>`;
+}
+
 function hasAppToken(){return Boolean(APP_TOKEN&&APP_TOKEN.trim())}
 function saveAppToken(token){
   APP_TOKEN=String(token||"").trim();
@@ -278,6 +301,8 @@ function todoForm(t=null){
       <input class="form-input" id="todo-task" maxlength="200" value="${esc(t?.task||"")}" placeholder="What needs doing?">
       <label class="form-label" for="todo-due">Due date</label>
       <input class="form-input" id="todo-due" type="date" value="${esc(t?.due||today())}">
+      <label class="form-label" for="todo-owner">Owner</label>
+      <div class="owner-picker" id="todo-owner">${TASK_OWNERS.map(o=>`<button type="button" class="owner-option ${getTodoOwner(t?.id)===o?"selected":""}" data-owner="${esc(o)}" onclick="selectTodoOwner(this)">${esc(o)}</button>`).join("")}</div>
       <label class="form-label" for="todo-category">Category</label>
       <select class="form-input" id="todo-category"><option value="">No category</option>${cats.map(c=>`<option value="${esc(c)}" ${c===category?"selected":""}>${esc(c)}</option>`).join("")}</select>
       <label class="form-label" for="todo-status">Status</label>
@@ -288,16 +313,29 @@ function todoForm(t=null){
   </div>`;
 }
 function openTodoForm(t=null){document.body.insertAdjacentHTML("beforeend",todoForm(t));setTimeout(()=>document.getElementById("todo-task")?.focus(),0)}
+function selectTodoOwner(button){
+  document.querySelectorAll("#todo-owner .owner-option").forEach(b=>b.classList.remove("selected"));
+  button.classList.add("selected");
+}
 function closeTodoForm(){document.getElementById("todo-form-modal")?.remove()}
 async function saveTodo(id){
   const task=document.getElementById("todo-task")?.value.trim();
   const due=document.getElementById("todo-due")?.value||null;
   const category=document.getElementById("todo-category")?.value||null;
   const status=document.getElementById("todo-status")?.value||"To do";
+  const owner=document.querySelector("#todo-owner .owner-option.selected")?.dataset.owner||TASK_OWNERS[0];
   if(!task){toast("Enter a task");return}
   try{
     const body={task,due,category,status};
     await api(id?`/api/todos/${encodeURIComponent(id)}`:"/api/todos",{method:id?"PATCH":"POST",body:JSON.stringify(body)});
+    // Ownership is deliberately local; it does not require an Airtable field.
+    if(id){setTodoOwner(id,owner)}else{
+      // The API-created record ID is only available after creation, so reload and
+      // associate the newly created task with the selected owner by matching its content.
+      const created=await load("todos");
+      const match=(created.todos||[]).find(x=>x.task===task && String(x.due||"").slice(0,10)===String(due||"").slice(0,10));
+      if(match)setTodoOwner(match.id,owner);
+    }
     closeTodoForm();toast(id?"Task updated":"Task added");show("todo");
   }catch(e){toast("Couldn't save task: "+e.message)}
 }
@@ -314,11 +352,12 @@ async function todo(){
       const sc=todoStatusClass(t.status);
       const tag=t.category?`<span class="tag ${esc(t.category)}">${esc(t.category)}</span>`:"";
       const due=t.due?`<div class="sub">${esc(dateLabel(t.due))}</div>`:"";
+      const owner=ownerBadge(getTodoOwner(t.id));
       const stateText=sc==="progress"?`<span class="status-text">In progress</span>`:"";
       sections += `<div class="card row todo-row">
         <button aria-label="Change task status" class="check ${sc}" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button>
         <div class="grow" onclick="editTodo('${esc(t.id)}')" style="cursor:pointer">
-          <div class="title ${sc==="done"?"completed":""}">${esc(t.task)}</div>${stateText}${tag}${due}
+          <div class="todo-title-line"><div class="title ${sc==="done"?"completed":""}">${esc(t.task)}</div>${owner}</div>${stateText}${tag}${due}
         </div>
         <button class="chev" onclick="editTodo('${esc(t.id)}')">›</button></div>`;
     }
