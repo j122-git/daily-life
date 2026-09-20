@@ -14,4 +14,4 @@ Daily Life family web app. This release is focused on the To-do module.
 The frontend uses the configured Cloudflare Worker. The Worker exposes `/api/todo-options` to read the Category and Status single-select choices from the Airtable base schema.
 
 ### Rollback
-The previous known-good baseline is `v0.1.0`.
+The previous known-good baseline is `v0.2.1`.
