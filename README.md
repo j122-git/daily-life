@@ -1,4 +1,4 @@
-# Daily Life — v0.2.1
+# Daily Life — v0.2.2
 
 Daily Life family web app. This release is focused on the To-do module.
 

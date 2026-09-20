@@ -30,7 +30,28 @@ function bucket(t){if(t.bucket)return t.bucket;if(t.due===today())return"today";
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:24px">🍲</div>`}
 function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">⌂</span>Home</button><button class="nav ${a==="recipes"?"active":""}" onclick="show('recipes')"><span class="ni">♨</span>Recipes</button><button class="nav ${a==="todo"?"active":""}" onclick="show('todo')"><span class="ni">✓</span>Lists</button><button class="nav" onclick="toast('More coming soon')"><span class="ni">•••</span>More</button></nav>`}
 function header(title="",back=false){return `<header class="header">${back?`<button class="back" onclick="show('home')">‹</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1><button class="avatar" onclick="show('token')" aria-label="Connection settings" title="Connection settings">🔑</button></header>`}
-async function load(kind){const d=await api(kind==="recipes"?"/api/recipes":kind==="todos"?"/api/todos":kind==="todo-options"?"/api/todo-options":"/api/meal-plan");if(kind==="recipes")state.recipes=d.recipes||[];if(kind==="todos")state.todos=(d.todos||[]).map(t=>({...t,bucket:bucket(t)}));if(kind==="todo-options")state.todoOptions={categories:d.categories||[],statuses:d.statuses||[]};if(kind==="mealPlan")state.mealPlan=d.mealPlan||[];return d}
+async function load(kind){
+  const path=kind==="recipes"?"/api/recipes":kind==="todos"?"/api/todos":kind==="todo-options"?"/api/todo-options":"/api/meal-plan";
+  try{
+    const d=await api(path);
+    if(kind==="recipes")state.recipes=d.recipes||[];
+    if(kind==="todos")state.todos=(d.todos||[]).map(t=>({...t,bucket:bucket(t)}));
+    if(kind==="todo-options")state.todoOptions={categories:d.categories||[],statuses:d.statuses||[]};
+    if(kind==="mealPlan")state.mealPlan=d.mealPlan||[];
+    return d;
+  }catch(e){
+    // todo-options is an optional enhancement. Older workers (or workers whose
+    // Airtable token cannot read schema metadata) may not expose it. The To-do
+    // module must still work using categories already present in the tasks and
+    // the standard status choices.
+    if(kind==="todo-options"){
+      state.todoOptions={categories:[],statuses:[]};
+      console.warn("Todo options unavailable; using local fallback.",e);
+      return {categories:[],statuses:[],fallback:true};
+    }
+    throw e;
+  }
+}
 async function all(){await Promise.all([load("recipes"),load("todos"),load("mealPlan")]);return state}
 function recipeFor(item){return state.recipes.find(r=>r.id===item?.recipeId)}
 function week(){const out=[];const d=new Date();const wd=d.getDay();d.setDate(d.getDate()+(wd===0?-6:1-wd));for(let i=0;i<7;i++){const x=new Date(d);x.setDate(d.getDate()+i);const ds=iso(x), meals=state.mealPlan.filter(m=>m.date===ds), m=meals.find(x=>/dinner/i.test(x.meal||""))||meals[0], r=recipeFor(m);out.push(`<div class="day d${i%4+1}"><small>${x.toLocaleDateString("en-GB",{weekday:"short"})}</small><b>${esc(r?.name||m?.recipeName||"—")}</b></div>`)}return out.join("")}

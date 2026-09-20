@@ -1,3 +1,13 @@
+# Daily Life v0.2.2
+
+## Stability fix
+
+- The To-do screen no longer fails completely if `/api/todo-options` is unavailable (for example, when the currently deployed Worker has not yet been updated, or the Airtable token cannot read schema metadata).
+- In that situation the app falls back to categories already used by existing tasks and the standard To do / In progress / Done statuses.
+- Recipes, meal plan and the core To-do API continue to use the normal connection/error handling.
+
+---
+
 # Daily Life v0.2.1
 
 ## To-do module
