@@ -1,6 +1,6 @@
 /*
  * Daily Life — browser history navigation
- * v0.2.3
+ * v0.2.4
  *
  * Drop this file AFTER the existing Daily-Life app JavaScript in index.html:
  *

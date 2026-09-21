@@ -2,29 +2,11 @@
 const API=(window.DAILY_LIFE_API||"https://daily-life.thibaud-guerrero.workers.dev/").replace(/\/$/,"");
 let APP_TOKEN=localStorage.getItem("dailyLifeAppToken")||"";
 let state={recipes:[],todos:[],mealPlan:[],todoOptions:{categories:[],statuses:[]}};
-
-// Household task owners are intentionally kept local to the app.
-// Add another initial here later without needing an Airtable users table.
-const TASK_OWNERS=["T","B"];
-const TODO_OWNER_STORAGE_KEY="dailyLifeTodoOwners";
-
-function getTodoOwners(){
-  try{return JSON.parse(localStorage.getItem(TODO_OWNER_STORAGE_KEY)||"{}")}catch{return {}}
-}
-function getTodoOwner(id){
-  const owners=getTodoOwners();
-  return owners[id]||TASK_OWNERS[0];
-}
-function setTodoOwner(id,owner){
-  if(!id)return;
-  const owners=getTodoOwners();
-  owners[id]=TASK_OWNERS.includes(owner)?owner:TASK_OWNERS[0];
-  localStorage.setItem(TODO_OWNER_STORAGE_KEY,JSON.stringify(owners));
-}
-function ownerBadge(owner){
-  const value=TASK_OWNERS.includes(owner)?owner:TASK_OWNERS[0];
-  return `<span class="owner-badge" aria-label="Owner: ${esc(value)}">${esc(value)}</span>`;
-}
+const CACHE_TTL=60*1000;
+const cacheMeta={recipes:{loaded:false,at:0,promise:null},todos:{loaded:false,at:0,promise:null},mealPlan:{loaded:false,at:0,promise:null},"todo-options":{loaded:false,at:0,promise:null}};
+const isFresh=k=>cacheMeta[k].loaded&&(Date.now()-cacheMeta[k].at)<CACHE_TTL;
+function markLoaded(k){cacheMeta[k].loaded=true;cacheMeta[k].at=Date.now()}
+function invalidate(k){cacheMeta[k].loaded=false;cacheMeta[k].at=0}
 
 function hasAppToken(){return Boolean(APP_TOKEN&&APP_TOKEN.trim())}
 function saveAppToken(token){
@@ -53,29 +35,27 @@ function bucket(t){if(t.bucket)return t.bucket;if(t.due===today())return"today";
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:24px">🍲</div>`}
 function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">⌂</span>Home</button><button class="nav ${a==="recipes"?"active":""}" onclick="show('recipes')"><span class="ni">♨</span>Recipes</button><button class="nav ${a==="todo"?"active":""}" onclick="show('todo')"><span class="ni">✓</span>Lists</button><button class="nav" onclick="toast('More coming soon')"><span class="ni">•••</span>More</button></nav>`}
 function header(title="",back=false){return `<header class="header">${back?`<button class="back" onclick="show('home')">‹</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1><button class="avatar" onclick="show('token')" aria-label="Connection settings" title="Connection settings">🔑</button></header>`}
-async function load(kind){
+async function load(kind,{force=false,background=false}={}){
+  const meta=cacheMeta[kind];
+  if(!force&&meta.loaded){if(!isFresh(kind)&&!meta.promise)meta.promise=load(kind,{force:true,background:true}).finally(()=>meta.promise=null);return state}
+  if(meta.promise)return meta.promise;
   const path=kind==="recipes"?"/api/recipes":kind==="todos"?"/api/todos":kind==="todo-options"?"/api/todo-options":"/api/meal-plan";
-  try{
+  const request=(async()=>{try{
     const d=await api(path);
     if(kind==="recipes")state.recipes=d.recipes||[];
     if(kind==="todos")state.todos=(d.todos||[]).map(t=>({...t,bucket:bucket(t)}));
     if(kind==="todo-options")state.todoOptions={categories:d.categories||[],statuses:d.statuses||[]};
     if(kind==="mealPlan")state.mealPlan=d.mealPlan||[];
-    return d;
+    markLoaded(kind); return d;
   }catch(e){
-    // todo-options is an optional enhancement. Older workers (or workers whose
-    // Airtable token cannot read schema metadata) may not expose it. The To-do
-    // module must still work using categories already present in the tasks and
-    // the standard status choices.
-    if(kind==="todo-options"){
-      state.todoOptions={categories:[],statuses:[]};
-      console.warn("Todo options unavailable; using local fallback.",e);
-      return {categories:[],statuses:[],fallback:true};
-    }
+    if(kind==="todo-options"){state.todoOptions={categories:[],statuses:[]};markLoaded(kind);return {categories:[],statuses:[],fallback:true}}
+    if(background&&meta.loaded){console.warn(`Background refresh failed for ${kind}.`,e);return state}
     throw e;
-  }
+  }})();
+  meta.promise=request; try{return await request}finally{if(meta.promise===request)meta.promise=null}
 }
-async function all(){await Promise.all([load("recipes"),load("todos"),load("mealPlan")]);return state}
+async function all({force=false}={}){await Promise.all([load("recipes",{force}),load("todos",{force}),load("mealPlan",{force})]);return state}
+function refreshDataInBackground(kinds=["recipes","todos","mealPlan"]){for(const k of kinds)if(cacheMeta[k].loaded&&!cacheMeta[k].promise)load(k,{force:true,background:true})}
 function recipeFor(item){return state.recipes.find(r=>r.id===item?.recipeId)}
 function week(){const out=[];const d=new Date();const wd=d.getDay();d.setDate(d.getDate()+(wd===0?-6:1-wd));for(let i=0;i<7;i++){const x=new Date(d);x.setDate(d.getDate()+i);const ds=iso(x), meals=state.mealPlan.filter(m=>m.date===ds), m=meals.find(x=>/dinner/i.test(x.meal||""))||meals[0], r=recipeFor(m);out.push(`<div class="day d${i%4+1}"><small>${x.toLocaleDateString("en-GB",{weekday:"short"})}</small><b>${esc(r?.name||m?.recipeName||"—")}</b></div>`)}return out.join("")}
 function connectionModal(success,title,message){
@@ -255,9 +235,10 @@ function tokenScreen(){
   </div>`
 }
 
-async function home(){await all();const meal=state.mealPlan.find(m=>m.date===today()),r=recipeFor(meal)||state.recipes[0],ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3);return `<div class="shell">${header()}<main class="page"><div class="eyebrow">Good morning,</div><div class="hello">The Wilsons ☀️</div><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">♜</div><span>Meal plan</span></button><button class="module m-todo" onclick="show('todo')"><div class="ico">✓</div><span>To do (${state.todos.filter(t=>t.status!=="Done").length})</span></button><button class="module m-shop" onclick="toast('Shopping list coming next')"><div class="ico">🛒</div><span>Shopping</span></button><button class="module m-family" onclick="toast('Family coming next')"><div class="ico">♧</div><span>Family</span></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${r?`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="eyebrow">${esc(meal?.meal||"Meal")}</div><div class="title">${esc(r.name)}</div></div><div class="chev">›</div></div>`:`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">›</div></div>`).join("")}<div class="section-head"><h2>This week's meal plan</h2><button class="link" onclick="show('recipes')">View all</button></div><div class="meal-week">${week()}</div></main>${nav("home")}</div>`}
-async function recipes(){await load("recipes");return `<div class="shell">${header("Recipes",true)}<main class="page"><div class="filterbar"><span class="pill active">All</span><span class="pill">Quick</span><span class="pill">Family</span><span class="pill">Favourites</span></div>${state.recipes.map(r=>`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${esc(r.cuisine||"")}${r.cookingTime?` · ${esc(r.cookingTime)}`:""}${r.servings?` · ${esc(r.servings)} servings`:""}</div></div><div class="chev">›</div></div>`).join("")||'<div class="empty">No recipes found.</div>'}</main>${nav("recipes")}</div>`}
-async function recipe(id){const d=await api(`/api/recipes/${encodeURIComponent(id)}`),r=d.recipe;if(!r)throw Error("Recipe not found");const ing=Array.isArray(r.ingredients)?r.ingredients:[];return `<div class="shell">${header(r.name,true)}<main class="page"><article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px">🍲</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>◷ ${esc(r.cookingTime)}</span>`:""}${r.servings?`<span>♜ ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>♧ ${esc(r.difficulty)}</span>`:""}</div>${r.notes||r.recipeText?`<p class="desc">${esc(r.notes||r.recipeText)}</p>`:""}${ing.length?`<h3>Ingredients</h3>${ing.map(x=>`<div class="ingredient"><span class="circle"></span>${esc(typeof x==="string"?x:JSON.stringify(x))}</div>`).join("")}`:""}<button class="module m-meal" style="width:100%;margin-top:14px;padding:14px" onclick="toast('Meal-plan editing coming next')">▣ &nbsp; Add to meal plan</button></div></article></main></div>`}
+function home(){const meal=state.mealPlan.find(m=>m.date===today()),r=recipeFor(meal)||state.recipes[0],ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3);return `<div class="shell">${header()}<main class="page"><div class="eyebrow">Good morning,</div><div class="hello">The Wilsons ☀️</div><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">♜</div><span>Meal plan</span></button><button class="module m-todo" onclick="show('todo')"><div class="ico">✓</div><span>To do (${state.todos.filter(t=>t.status!=="Done").length})</span></button><button class="module m-shop" onclick="toast('Shopping list coming next')"><div class="ico">🛒</div><span>Shopping</span></button><button class="module m-family" onclick="toast('Family coming next')"><div class="ico">♧</div><span>Family</span></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${r?`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="eyebrow">${esc(meal?.meal||"Meal")}</div><div class="title">${esc(r.name)}</div></div><div class="chev">›</div></div>`:`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">›</div></div>`).join("")}<div class="section-head"><h2>This week's meal plan</h2><button class="link" onclick="show('recipes')">View all</button></div><div class="meal-week">${week()}</div></main>${nav("home")}</div>`}
+function recipes(){return `<div class="shell">${header("Recipes",true)}<main class="page"><div class="filterbar"><span class="pill active">All</span><span class="pill">Quick</span><span class="pill">Family</span><span class="pill">Favourites</span></div>${state.recipes.map(r=>`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${esc(r.cuisine||"")}${r.cookingTime?` · ${esc(r.cookingTime)}`:""}${r.servings?` · ${esc(r.servings)} servings`:""}</div></div><div class="chev">›</div></div>`).join("")||'<div class="empty">No recipes found.</div>'}</main>${nav("recipes")}</div>`}
+async function recipe(id){const cached=state.recipes.find(x=>x.id===id);if(cached&&(cached.ingredients||cached.recipeText||cached.notes))return renderRecipe(cached);const d=await api(`/api/recipes/${encodeURIComponent(id)}`),r=d.recipe;if(!r)throw Error("Recipe not found");const i=state.recipes.findIndex(x=>x.id===id);if(i>=0)state.recipes[i]={...state.recipes[i],...r};else state.recipes.push(r);return renderRecipe(state.recipes.find(x=>x.id===id)||r)}
+function renderRecipe(r){const ing=Array.isArray(r.ingredients)?r.ingredients:[];return `<div class="shell">${header(r.name,true)}<main class="page"><article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px">🍲</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>◷ ${esc(r.cookingTime)}</span>`:""}${r.servings?`<span>♜ ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>♧ ${esc(r.difficulty)}</span>`:""}</div>${r.notes||r.recipeText?`<p class="desc">${esc(r.notes||r.recipeText)}</p>`:""}${ing.length?`<h3>Ingredients</h3>${ing.map(x=>`<div class="ingredient"><span class="circle"></span>${esc(typeof x==="string"?x:JSON.stringify(x))}</div>`).join("")}`:""}<button class="module m-meal" style="width:100%;margin-top:14px;padding:14px" onclick="toast('Meal-plan editing coming next')">▣ &nbsp; Add to meal plan</button></div></article></main></div>`}
 let todoFilter="All";
 let todoSort="desc";
 
@@ -301,8 +282,6 @@ function todoForm(t=null){
       <input class="form-input" id="todo-task" maxlength="200" value="${esc(t?.task||"")}" placeholder="What needs doing?">
       <label class="form-label" for="todo-due">Due date</label>
       <input class="form-input" id="todo-due" type="date" value="${esc(t?.due||today())}">
-      <label class="form-label" for="todo-owner">Owner</label>
-      <div class="owner-picker" id="todo-owner">${TASK_OWNERS.map(o=>`<button type="button" class="owner-option ${getTodoOwner(t?.id)===o?"selected":""}" data-owner="${esc(o)}" onclick="selectTodoOwner(this)">${esc(o)}</button>`).join("")}</div>
       <label class="form-label" for="todo-category">Category</label>
       <select class="form-input" id="todo-category"><option value="">No category</option>${cats.map(c=>`<option value="${esc(c)}" ${c===category?"selected":""}>${esc(c)}</option>`).join("")}</select>
       <label class="form-label" for="todo-status">Status</label>
@@ -313,34 +292,19 @@ function todoForm(t=null){
   </div>`;
 }
 function openTodoForm(t=null){document.body.insertAdjacentHTML("beforeend",todoForm(t));setTimeout(()=>document.getElementById("todo-task")?.focus(),0)}
-function selectTodoOwner(button){
-  document.querySelectorAll("#todo-owner .owner-option").forEach(b=>b.classList.remove("selected"));
-  button.classList.add("selected");
-}
 function closeTodoForm(){document.getElementById("todo-form-modal")?.remove()}
 async function saveTodo(id){
   const task=document.getElementById("todo-task")?.value.trim();
   const due=document.getElementById("todo-due")?.value||null;
   const category=document.getElementById("todo-category")?.value||null;
   const status=document.getElementById("todo-status")?.value||"To do";
-  const owner=document.querySelector("#todo-owner .owner-option.selected")?.dataset.owner||TASK_OWNERS[0];
   if(!task){toast("Enter a task");return}
   try{
     const body={task,due,category,status};
-    await api(id?`/api/todos/${encodeURIComponent(id)}`:"/api/todos",{method:id?"PATCH":"POST",body:JSON.stringify(body)});
-    // Ownership is deliberately local; it does not require an Airtable field.
-    if(id){setTodoOwner(id,owner)}else{
-      // The API-created record ID is only available after creation, so reload and
-      // associate the newly created task with the selected owner by matching its content.
-      const created=await load("todos");
-      const match=(created.todos||[]).find(x=>x.task===task && String(x.due||"").slice(0,10)===String(due||"").slice(0,10));
-      if(match)setTodoOwner(match.id,owner);
-    }
-    closeTodoForm();toast(id?"Task updated":"Task added");show("todo");
+    if(id){const i=state.todos.findIndex(x=>x.id===id);if(i>=0)state.todos[i]={...state.todos[i],...body,bucket:bucket({...state.todos[i],...body})};closeTodoForm();toast("Task updated");show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify(body)});markLoaded("todos")}catch(e){await load("todos",{force:true});show("todo");toast("Couldn't save task: "+e.message)}}else{try{const d=await api("/api/todos",{method:"POST",body:JSON.stringify(body)});if(d?.todo)state.todos.unshift({...d.todo,bucket:bucket(d.todo)});else invalidate("todos");closeTodoForm();toast("Task added");show("todo")}catch(e){toast("Couldn't save task: "+e.message)}}
   }catch(e){toast("Couldn't save task: "+e.message)}
 }
-async function todo(){
-  await Promise.all([load("todos"),load("todo-options")]);
+function todo(){
   const ts=filteredTodos();
   const groups=[ ["today","Today"],["tomorrow","Tomorrow"],["upcoming","Upcoming"] ];
   let sections="";
@@ -352,37 +316,35 @@ async function todo(){
       const sc=todoStatusClass(t.status);
       const tag=t.category?`<span class="tag ${esc(t.category)}">${esc(t.category)}</span>`:"";
       const due=t.due?`<div class="sub">${esc(dateLabel(t.due))}</div>`:"";
-      const owner=ownerBadge(getTodoOwner(t.id));
       const stateText=sc==="progress"?`<span class="status-text">In progress</span>`:"";
       sections += `<div class="card row todo-row">
         <button aria-label="Change task status" class="check ${sc}" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button>
         <div class="grow" onclick="editTodo('${esc(t.id)}')" style="cursor:pointer">
-          <div class="todo-title-line"><div class="title ${sc==="done"?"completed":""}">${esc(t.task)}</div>${owner}</div>${stateText}${tag}${due}
+          <div class="title ${sc==="done"?"completed":""}">${esc(t.task)}</div>${stateText}${tag}${due}
         </div>
         <button class="chev" onclick="editTodo('${esc(t.id)}')">›</button></div>`;
     }
   }
   return `<div class="shell">${header("To do",false)}<main class="page"><div style="display:flex;justify-content:space-between;align-items:center"><h1 class="screen-title">To do</h1><button class="plus" onclick="openTodoForm()">+</button></div><div class="filterbar">${["All","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first ↓":"Oldest first ↑"}</button></div>${sections||'<div class="empty">No tasks found.</div>'}</main>${nav("todo")}</div>`;
 }
-async function editTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;await load("todo-options");openTodoForm(t)}
-async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status:nextTodoStatus(t.status)})});show("todo")}catch(e){toast("Couldn't update task: "+e.message)}}
-async function deleteTodo(id){if(!confirm("Delete this task?"))return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"DELETE"});closeTodoForm();toast("Task deleted");show("todo")}catch(e){toast("Couldn't delete task: "+e.message)}}
+function editTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;openTodoForm(t);load("todo-options")}
+async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;const previous=t.status,status=nextTodoStatus(previous);t.status=status;show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})});markLoaded("todos")}catch(e){t.status=previous;show("todo");toast("Couldn't update task: "+e.message)}}
+async function deleteTodo(id){if(!confirm("Delete this task?"))return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"DELETE"});state.todos=state.todos.filter(x=>x.id!==id);markLoaded("todos");closeTodoForm();toast("Task deleted");show("todo")}catch(e){toast("Couldn't delete task: "+e.message)}}
 function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
 function errorScreen(e){return `<div class="shell">${header()}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="module m-meal" style="width:100%;margin-top:14px;padding:14px" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
 async function show(page,id){
-  scrollTo(0,0);
-  document.getElementById("app").innerHTML='<div class="shell loading">Loading…</div>';
+  scrollTo(0,0);const app=document.getElementById("app");
   try{
-    let h;
-    if(page==="token") h=tokenScreen();
-    else if(page==="home") h=hasAppToken()?await home():tokenScreen();
-    else if(page==="recipes") h=await recipes();
-    else if(page==="recipe") h=await recipe(id);
-    else h=await todo();
-    document.getElementById("app").innerHTML=h;
-  }catch(e){
-    console.error(e);
-    document.getElementById("app").innerHTML=errorScreen(e);
-  }
+    if(page==="token"){app.innerHTML=tokenScreen();return}
+    if(!hasAppToken()){app.innerHTML=tokenScreen();return}
+    if(page==="home"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await all()}
+    else if(page==="recipes"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("recipes")}
+    else if(page==="todo"&&!cacheMeta.todos.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("todos")}
+    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else h=todo();
+    app.innerHTML=h;
+    if(page==="home")refreshDataInBackground(["recipes","todos","mealPlan"]);
+    if(page==="recipes"||page==="recipe")refreshDataInBackground(["recipes"]);
+    if(page==="todo"){refreshDataInBackground(["todos"]);if(!cacheMeta["todo-options"].loaded)load("todo-options",{background:true})}
+  }catch(e){console.error(e);app.innerHTML=errorScreen(e)}
 }
-show("home");
+if(!window.location.hash)show("home");

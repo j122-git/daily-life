@@ -351,11 +351,3 @@ button{font:inherit;border:0;cursor:pointer}.shell{max-width:460px;margin:auto;m
 .form-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
 .form-actions .primary-button,.form-actions .secondary-button{margin-top:0}
 .danger-button{width:100%;margin-top:10px;min-height:44px;border:0;border-radius:22px;background:#f7e1de;color:#9b3e35;font:inherit;font-weight:700;cursor:pointer}
-
-/* Task ownership — local household initials */
-.owner-badge{display:inline-grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:var(--peach);color:var(--navy);font-size:11px;font-weight:800;line-height:1;border:1px solid rgba(24,54,82,.08)}
-.todo-title-line{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
-.todo-title-line .title{min-width:0}
-.owner-picker{display:flex;gap:8px}
-.owner-option{width:46px;height:42px;border-radius:13px;border:1px solid var(--line);background:var(--paper);color:var(--navy);font-size:13px;font-weight:800}
-.owner-option.selected{background:var(--green);border-color:var(--green);color:#fff}

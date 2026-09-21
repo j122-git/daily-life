@@ -1,3 +1,19 @@
+# Daily Life v0.2.4
+
+## Performance / responsiveness
+
+- Added in-memory client-side caching for recipes, To-do items, meal plan and To-do options.
+- Normal navigation now renders from cached state instead of refetching from the Worker on every tap.
+- Removed the full-screen Loading transition from normal navigation.
+- Added stale-while-revalidate background refresh with a 60-second freshness window.
+- Prevented duplicate concurrent requests for the same data set.
+- Recipe detail reuses cached recipe data where detail fields are already present.
+- To-do status changes update the UI immediately and persist in the background, with rollback on failure.
+- To-do edits update local state immediately; the server is only awaited after the UI has changed.
+- To-do deletion updates local cache after server confirmation instead of reloading the screen.
+- Initial app load still uses a loading state because the first data fetch must complete.
+- No Worker changes required.
+
 # Daily Life v0.2.2
 
 ## Stability fix
