@@ -30,8 +30,28 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 function iso(d=new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
 function today(){return iso()}
 function tomorrow(){const d=new Date();d.setDate(d.getDate()+1);return iso(d)}
-function dateLabel(s){if(!s)return "";const raw=String(s).slice(0,10);const d=new Date(raw+"T00:00:00");return Number.isNaN(d.getTime())?String(s):d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
-function bucket(t){if(t.bucket)return t.bucket;if(t.due===today())return"today";if(t.due===tomorrow())return"tomorrow";return"upcoming"}
+
+// Task due dates are calendar dates, not timestamps. Keep them as YYYY-MM-DD
+// strings so timezone conversions cannot move a task by one day.
+function todoDate(value){
+  if(!value)return null;
+  const match=String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  return match?match[1]:null;
+}
+function dateLabel(value){
+  const raw=todoDate(value);
+  if(!raw)return value?String(value):"";
+  const [y,m,d]=raw.split("-").map(Number);
+  const date=new Date(y,m-1,d);
+  return Number.isNaN(date.getTime())?raw:date.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+}
+function bucket(t){
+  const due=todoDate(t?.due);
+  if(!due)return"upcoming";
+  if(due===today())return"today";
+  if(due===tomorrow())return"tomorrow";
+  return"upcoming";
+}
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:24px">🍲</div>`}
 function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">⌂</span>Home</button><button class="nav ${a==="recipes"?"active":""}" onclick="show('recipes')"><span class="ni">♨</span>Recipes</button><button class="nav ${a==="todo"?"active":""}" onclick="show('todo')"><span class="ni">✓</span>Lists</button><button class="nav" onclick="toast('More coming soon')"><span class="ni">•••</span>More</button></nav>`}
 function header(title="",back=false){return `<header class="header">${back?`<button class="back" onclick="show('home')">‹</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1><button class="avatar" onclick="show('token')" aria-label="Connection settings" title="Connection settings">🔑</button></header>`}
@@ -43,7 +63,7 @@ async function load(kind,{force=false,background=false}={}){
   const request=(async()=>{try{
     const d=await api(path);
     if(kind==="recipes")state.recipes=d.recipes||[];
-    if(kind==="todos")state.todos=(d.todos||[]).map(t=>({...t,bucket:bucket(t)}));
+    if(kind==="todos")state.todos=(d.todos||[]).map(t=>({...t,due:todoDate(t.due),bucket:bucket(t)}));
     if(kind==="todo-options")state.todoOptions={categories:d.categories||[],statuses:d.statuses||[]};
     if(kind==="mealPlan")state.mealPlan=d.mealPlan||[];
     markLoaded(kind); return d;
@@ -235,7 +255,7 @@ function tokenScreen(){
   </div>`
 }
 
-function home(){const meal=state.mealPlan.find(m=>m.date===today()),r=recipeFor(meal)||state.recipes[0],ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3);return `<div class="shell">${header()}<main class="page"><div class="eyebrow">Good morning,</div><div class="hello">The Wilsons ☀️</div><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">♜</div><span>Meal plan</span></button><button class="module m-todo" onclick="show('todo')"><div class="ico">✓</div><span>To do (${state.todos.filter(t=>t.status!=="Done").length})</span></button><button class="module m-shop" onclick="toast('Shopping list coming next')"><div class="ico">🛒</div><span>Shopping</span></button><button class="module m-family" onclick="toast('Family coming next')"><div class="ico">♧</div><span>Family</span></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${r?`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="eyebrow">${esc(meal?.meal||"Meal")}</div><div class="title">${esc(r.name)}</div></div><div class="chev">›</div></div>`:`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">›</div></div>`).join("")}<div class="section-head"><h2>This week's meal plan</h2><button class="link" onclick="show('recipes')">View all</button></div><div class="meal-week">${week()}</div></main>${nav("home")}</div>`}
+function home(){const meal=state.mealPlan.find(m=>m.date===today()),r=recipeFor(meal)||state.recipes[0],ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3);return `<div class="shell">${header()}<main class="page"><div class="eyebrow">Good morning,</div><div class="hello">The Wilsons ☀️</div><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">♜</div><div class="module-title">Meal plan</div><div class="module-sub">See what's for dinner<span class="chev">›</span></div></button><button class="module m-todo" onclick="show('todo')"><div class="ico">✓</div><div class="module-title">To do</div><div class="module-sub">${state.todos.filter(t=>t.status!=="Done").length} tasks<span class="chev">›</span></div></button><button class="module m-shop" onclick="toast('Shopping list coming next')"><div class="ico">🛒</div><div class="module-title">Shopping</div><div class="module-sub">Coming soon<span class="chev">›</span></div></button><button class="module m-family" onclick="toast('Family coming next')"><div class="ico">♧</div><div class="module-title">Family</div><div class="module-sub">Coming soon<span class="chev">›</span></div></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${r?`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="eyebrow">${esc(meal?.meal||"Meal")}</div><div class="title">${esc(r.name)}</div></div><div class="chev">›</div></div>`:`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">›</div></div>`).join("")}<div class="section-head"><h2>This week's meal plan</h2><button class="link" onclick="show('recipes')">View all</button></div><div class="meal-week">${week()}</div></main>${nav("home")}</div>`}
 function recipes(){return `<div class="shell">${header("Recipes",true)}<main class="page"><div class="filterbar"><span class="pill active">All</span><span class="pill">Quick</span><span class="pill">Family</span><span class="pill">Favourites</span></div>${state.recipes.map(r=>`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${esc(r.cuisine||"")}${r.cookingTime?` · ${esc(r.cookingTime)}`:""}${r.servings?` · ${esc(r.servings)} servings`:""}</div></div><div class="chev">›</div></div>`).join("")||'<div class="empty">No recipes found.</div>'}</main>${nav("recipes")}</div>`}
 async function recipe(id){const cached=state.recipes.find(x=>x.id===id);if(cached&&(cached.ingredients||cached.recipeText||cached.notes))return renderRecipe(cached);const d=await api(`/api/recipes/${encodeURIComponent(id)}`),r=d.recipe;if(!r)throw Error("Recipe not found");const i=state.recipes.findIndex(x=>x.id===id);if(i>=0)state.recipes[i]={...state.recipes[i],...r};else state.recipes.push(r);return renderRecipe(state.recipes.find(x=>x.id===id)||r)}
 function renderRecipe(r){const ing=Array.isArray(r.ingredients)?r.ingredients:[];return `<div class="shell">${header(r.name,true)}<main class="page"><article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px">🍲</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>◷ ${esc(r.cookingTime)}</span>`:""}${r.servings?`<span>♜ ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>♧ ${esc(r.difficulty)}</span>`:""}</div>${r.notes||r.recipeText?`<p class="desc">${esc(r.notes||r.recipeText)}</p>`:""}${ing.length?`<h3>Ingredients</h3>${ing.map(x=>`<div class="ingredient"><span class="circle"></span>${esc(typeof x==="string"?x:JSON.stringify(x))}</div>`).join("")}`:""}<button class="module m-meal" style="width:100%;margin-top:14px;padding:14px" onclick="toast('Meal-plan editing coming next')">▣ &nbsp; Add to meal plan</button></div></article></main></div>`}
@@ -258,12 +278,12 @@ function statusLabel(status){
 }
 function filteredTodos(){
   let ts=[...state.todos];
-  if(todoFilter==="Today") ts=ts.filter(t=>t.bucket==="today");
-  else if(todoFilter==="Upcoming") ts=ts.filter(t=>t.bucket==="tomorrow"||t.bucket==="upcoming");
+  if(todoFilter==="Today") ts=ts.filter(t=>bucket(t)==="today");
+  else if(todoFilter==="Upcoming") ts=ts.filter(t=>todoStatusClass(t.status)!=="done" && (bucket(t)==="tomorrow"||bucket(t)==="upcoming"));
   else if(todoFilter==="Done") ts=ts.filter(t=>todoStatusClass(t.status)==="done");
   ts.sort((a,b)=>{
-    const ad=a.due?String(a.due).slice(0,10):"9999-12-31";
-    const bd=b.due?String(b.due).slice(0,10):"9999-12-31";
+    const ad=todoDate(a.due)||"9999-12-31";
+    const bd=todoDate(b.due)||"9999-12-31";
     const cmp=ad.localeCompare(bd);
     return todoSort==="asc"?cmp:-cmp;
   });
@@ -300,7 +320,7 @@ async function saveTodo(id){
   const status=document.getElementById("todo-status")?.value||"To do";
   if(!task){toast("Enter a task");return}
   try{
-    const body={task,due,category,status};
+    const body={task,due:todoDate(due),category,status};
     if(id){const i=state.todos.findIndex(x=>x.id===id);if(i>=0)state.todos[i]={...state.todos[i],...body,bucket:bucket({...state.todos[i],...body})};closeTodoForm();toast("Task updated");show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify(body)});markLoaded("todos")}catch(e){await load("todos",{force:true});show("todo");toast("Couldn't save task: "+e.message)}}else{try{const d=await api("/api/todos",{method:"POST",body:JSON.stringify(body)});if(d?.todo)state.todos.unshift({...d.todo,bucket:bucket(d.todo)});else invalidate("todos");closeTodoForm();toast("Task added");show("todo")}catch(e){toast("Couldn't save task: "+e.message)}}
   }catch(e){toast("Couldn't save task: "+e.message)}
 }
