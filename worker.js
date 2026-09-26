@@ -12,6 +12,10 @@
  * Environment variables / Secrets:
  * AIRTABLE_TOKEN
  * APP_TOKEN
+ * CALENDAR_ICS_URL   — the family calendar's "Secret address in iCal
+ *                       format" from Google Calendar settings. Events
+ *                       are read directly from Google — nothing is
+ *                       written back, and nothing is stored in Airtable.
  */
 
 
@@ -297,6 +301,31 @@ export default {
 
       return await deleteTodo(
         recordId,
+        env,
+        corsHeaders
+      );
+
+    }
+
+
+    /* =====================================================
+       EVENTS (Google Calendar — read-only, via private ICS feed)
+       ===================================================== */
+
+    /*
+     * GET /api/events
+     *
+     * Optional:
+     *
+     * ?days=14   (default 14, capped at 60)
+     */
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/events"
+    ) {
+
+      return await getEvents(
+        url,
         env,
         corsHeaders
       );
@@ -854,11 +883,13 @@ function normaliseTodo(record) {
 
 
   const due =
-    firstValue(
-      fields,
-      [
-        "Due"
-      ]
+    calendarDateOnly(
+      firstValue(
+        fields,
+        [
+          "Due"
+        ]
+      )
     );
 
 
@@ -923,61 +954,25 @@ function normaliseTodo(record) {
    ========================================================= */
 
 function getTodoBucket(due) {
+  const date = calendarDateOnly(due);
+  if (!date) return "upcoming";
 
-  if (!due) {
-    return "upcoming";
-  }
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+  const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1);
+  const tomorrow = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth()+1).padStart(2,"0")}-${String(tomorrowDate.getDate()).padStart(2,"0")}`;
 
-
-  const dueDate =
-    new Date(`${due}T00:00:00`);
-
-
-  if (Number.isNaN(dueDate.getTime())) {
-    return "upcoming";
-  }
-
-
-  const today =
-    new Date();
-
-  today.setHours(
-    0, 0, 0, 0
-  );
-
-
-  const tomorrow =
-    new Date(today);
-
-  tomorrow.setDate(
-    tomorrow.getDate() + 1
-  );
-
-
-  if (
-    dueDate.getTime() ===
-    today.getTime()
-  ) {
-
-    return "today";
-
-  }
-
-
-  if (
-    dueDate.getTime() ===
-    tomorrow.getTime()
-  ) {
-
-    return "tomorrow";
-
-  }
-
-
+  if (date === today) return "today";
+  if (date === tomorrow) return "tomorrow";
   return "upcoming";
-
 }
 
+// Due is a calendar date. Never construct a Date from YYYY-MM-DD for task logic.
+function calendarDateOnly(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
 
 /* =========================================================
    TODO — CREATE
@@ -1026,7 +1021,7 @@ async function createTodo(
   if (body.due) {
 
     fields["Due"] =
-      body.due;
+      calendarDateOnly(body.due);
 
   }
 
@@ -1166,7 +1161,7 @@ async function updateTodo(
   if (body.due !== undefined) {
 
     fields["Due"] =
-      body.due || null;
+      calendarDateOnly(body.due);
 
   }
 
@@ -1316,6 +1311,396 @@ async function deleteTodo(
     recordId
 
   }, 200, corsHeaders);
+
+}
+
+
+/* =========================================================
+   EVENTS — GOOGLE CALENDAR (READ-ONLY, VIA PRIVATE ICS FEED)
+   ========================================================= */
+
+async function getEvents(
+  url,
+  env,
+  corsHeaders
+) {
+
+  if (!env.CALENDAR_ICS_URL) {
+
+    return json({
+      error: "CALENDAR_ICS_URL is not configured"
+    }, 500, corsHeaders);
+
+  }
+
+
+  const daysParam = parseInt(url.searchParams.get("days"), 10);
+
+  const days = Number.isFinite(daysParam)
+    ? Math.min(Math.max(daysParam, 1), 60)
+    : 14;
+
+
+  const rangeStart = new Date();
+  rangeStart.setUTCHours(0, 0, 0, 0);
+
+  const rangeEnd = new Date(rangeStart);
+  rangeEnd.setUTCDate(rangeEnd.getUTCDate() + days);
+
+
+  /*
+   * Short server-side cache so the app doesn't re-fetch the whole
+   * calendar from Google on every load. Client already caches for
+   * 60s on top of this.
+   */
+  const cache = caches.default;
+
+  const cacheKey = new Request(
+    `https://daily-life-cache.internal/events?days=${days}`,
+    { method: "GET" }
+  );
+
+
+  let icsText;
+
+  const cachedResponse = await cache.match(cacheKey);
+
+  if (cachedResponse) {
+
+    icsText = await cachedResponse.text();
+
+  } else {
+
+    const icsResponse = await fetch(env.CALENDAR_ICS_URL);
+
+    if (!icsResponse.ok) {
+
+      return json({
+        error: "Could not fetch the calendar feed"
+      }, 502, corsHeaders);
+
+    }
+
+    icsText = await icsResponse.text();
+
+    await cache.put(
+      cacheKey,
+      new Response(icsText, {
+        headers: { "Cache-Control": "max-age=300" }
+      })
+    );
+
+  }
+
+
+  let events;
+
+  try {
+
+    events = expandIcsEvents(icsText, rangeStart, rangeEnd);
+
+  } catch (e) {
+
+    return json({
+      error: "Could not parse the calendar feed",
+      details: String(e)
+    }, 502, corsHeaders);
+
+  }
+
+
+  return json({
+    events
+  }, 200, corsHeaders);
+
+}
+
+
+/* =========================================================
+   ICS PARSING — minimal, dependency-free
+   =========================================================
+   Handles the patterns a typical family Google Calendar
+   produces: single events, all-day events, and recurring
+   events with FREQ=DAILY / WEEKLY (+ BYDAY) / MONTHLY / YEARLY,
+   INTERVAL, COUNT, UNTIL and EXDATE.
+
+   This deliberately does NOT implement the full RFC5545 RRULE
+   spec (e.g. BYSETPOS, combined BYMONTHDAY+BYDAY rules). Very
+   unusual recurrence patterns may not expand correctly — test
+   against the real calendar before relying on this.
+   ========================================================= */
+
+function unfoldIcs(text) {
+
+  // RFC5545 line folding: a line starting with a space/tab is a
+  // continuation of the previous line.
+  return text.replace(/\r\n/g, "\n").split("\n").reduce((lines, line) => {
+
+    if ((line.startsWith(" ") || line.startsWith("\t")) && lines.length) {
+      lines[lines.length - 1] += line.slice(1);
+    } else {
+      lines.push(line);
+    }
+
+    return lines;
+
+  }, []);
+
+}
+
+function parseIcsLine(line) {
+
+  const colon = line.indexOf(":");
+  if (colon === -1) return null;
+
+  const left = line.slice(0, colon);
+  const value = line.slice(colon + 1);
+
+  const [name, ...paramParts] = left.split(";");
+  const params = {};
+
+  for (const p of paramParts) {
+    const eq = p.indexOf("=");
+    if (eq !== -1) params[p.slice(0, eq)] = p.slice(eq + 1);
+  }
+
+  return { name: name.toUpperCase(), params, value };
+
+}
+
+function unescapeIcsText(value) {
+  return String(value || "")
+    .replace(/\\n/gi, " ")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\");
+}
+
+// Converts a wall-clock local time in a given IANA timezone to a UTC Date.
+// Uses Intl (available in the Workers runtime) rather than a bundled
+// timezone database, to stay dependency-free.
+function zonedTimeToUtc(y, mo, d, h, mi, s, timeZone) {
+
+  const asUtc = Date.UTC(y, mo - 1, d, h, mi, s);
+
+  try {
+
+    const tzDate = new Date(new Date(asUtc).toLocaleString("en-US", { timeZone }));
+    const utcDate = new Date(new Date(asUtc).toLocaleString("en-US", { timeZone: "UTC" }));
+    const offset = utcDate.getTime() - tzDate.getTime();
+
+    return new Date(asUtc + offset);
+
+  } catch {
+
+    // Unknown/unsupported TZID — fall back to UTC rather than failing
+    // the whole feed over one event.
+    return new Date(asUtc);
+
+  }
+
+}
+
+function icsDateToUtc(value, params) {
+
+  // All-day: YYYYMMDD
+  if (params.VALUE === "DATE" || /^\d{8}$/.test(value)) {
+
+    const y = +value.slice(0, 4);
+    const m = +value.slice(4, 6);
+    const d = +value.slice(6, 8);
+
+    return { date: new Date(Date.UTC(y, m - 1, d)), allDay: true };
+
+  }
+
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
+  if (!match) return { date: null, allDay: false };
+
+  const [, y, mo, d, h, mi, s, z] = match;
+
+  if (z) {
+    return { date: new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s)), allDay: false };
+  }
+
+  if (params.TZID) {
+    return { date: zonedTimeToUtc(+y, +mo, +d, +h, +mi, +s, params.TZID), allDay: false };
+  }
+
+  // Floating time with no zone info — rare from Google. Treat as UTC.
+  return { date: new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s)), allDay: false };
+
+}
+
+function parseIcsEvents(text) {
+
+  const lines = unfoldIcs(text);
+  const events = [];
+  let current = null;
+
+  for (const raw of lines) {
+
+    if (raw === "BEGIN:VEVENT") { current = {}; continue; }
+    if (raw === "END:VEVENT") { if (current) events.push(current); current = null; continue; }
+    if (!current) continue;
+
+    const parsed = parseIcsLine(raw);
+    if (!parsed) continue;
+
+    const { name, params, value } = parsed;
+
+    if (name === "SUMMARY") current.summary = unescapeIcsText(value);
+    else if (name === "LOCATION") current.location = unescapeIcsText(value);
+    else if (name === "UID") current.uid = value;
+    else if (name === "DTSTART") { current.dtstart = value; current.dtstartParams = params; }
+    else if (name === "DTEND") { current.dtend = value; current.dtendParams = params; }
+    else if (name === "RRULE") current.rrule = value;
+    else if (name === "EXDATE") { current.exdate = current.exdate || []; current.exdate.push(...value.split(",")); }
+
+  }
+
+  return events;
+
+}
+
+function parseRrule(rrule) {
+  const parts = {};
+  for (const pair of rrule.split(";")) {
+    const [k, v] = pair.split("=");
+    parts[k] = v;
+  }
+  return parts;
+}
+
+const RRULE_DAY_INDEX = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+// Minimal RRULE expansion — see the file-level note above for scope.
+function expandRrule(rruleStr, dtstart, rangeEnd, exdates) {
+
+  const rule = parseRrule(rruleStr);
+  const freq = rule.FREQ;
+  const interval = parseInt(rule.INTERVAL, 10) || 1;
+  const count = rule.COUNT ? parseInt(rule.COUNT, 10) : null;
+  const until = rule.UNTIL ? icsDateToUtc(rule.UNTIL, {}).date : null;
+  const byday = rule.BYDAY ? rule.BYDAY.split(",") : null;
+
+  const exSet = new Set(
+    (exdates || []).map(v => icsDateToUtc(v.trim(), {}).date?.toISOString())
+  );
+
+  const stopDate = until && until < rangeEnd ? until : rangeEnd;
+  const hardCap = 366; // safety cap on generated occurrences
+
+  const occurrences = [];
+  let cursor = new Date(dtstart);
+  let n = 0;
+
+  while (cursor <= stopDate && occurrences.length < hardCap) {
+
+    if (count && n >= count) break;
+
+    if (freq === "WEEKLY" && byday) {
+
+      const weekStart = new Date(cursor);
+      weekStart.setUTCDate(weekStart.getUTCDate() - weekStart.getUTCDay());
+
+      for (const code of byday) {
+
+        const target = RRULE_DAY_INDEX[code];
+        if (target === undefined) continue;
+
+        const occ = new Date(weekStart);
+        occ.setUTCDate(occ.getUTCDate() + target);
+        occ.setUTCHours(dtstart.getUTCHours(), dtstart.getUTCMinutes(), dtstart.getUTCSeconds(), 0);
+
+        if (occ >= dtstart && occ <= stopDate && !exSet.has(occ.toISOString())) {
+          occurrences.push(occ);
+        }
+
+      }
+
+      const next = new Date(cursor);
+      next.setUTCDate(next.getUTCDate() + 7 * interval);
+      cursor = next;
+      n++;
+      continue;
+
+    }
+
+    if (!exSet.has(cursor.toISOString())) occurrences.push(new Date(cursor));
+    n++;
+
+    const next = new Date(cursor);
+
+    if (freq === "DAILY") next.setUTCDate(next.getUTCDate() + interval);
+    else if (freq === "WEEKLY") next.setUTCDate(next.getUTCDate() + 7 * interval);
+    else if (freq === "MONTHLY") next.setUTCMonth(next.getUTCMonth() + interval);
+    else if (freq === "YEARLY") next.setUTCFullYear(next.getUTCFullYear() + interval);
+    else break; // unsupported FREQ — stop rather than loop forever
+
+    cursor = next;
+
+  }
+
+  return occurrences.filter(d => d <= rangeEnd);
+
+}
+
+function toEvent(ev, start, end, allDay) {
+  return {
+    id: ev.uid ? `${ev.uid}-${start.toISOString()}` : `${ev.summary}-${start.toISOString()}`,
+    title: ev.summary,
+    location: ev.location || null,
+    allDay,
+    start: allDay ? start.toISOString().slice(0, 10) : start.toISOString(),
+    end: allDay ? end.toISOString().slice(0, 10) : end.toISOString()
+  };
+}
+
+function expandIcsEvents(text, rangeStart, rangeEnd) {
+
+  const raw = parseIcsEvents(text);
+  const out = [];
+
+  for (const ev of raw) {
+
+    if (!ev.dtstart || !ev.summary) continue;
+
+    const start = icsDateToUtc(ev.dtstart, ev.dtstartParams || {});
+    if (!start.date) continue;
+
+    const end = ev.dtend ? icsDateToUtc(ev.dtend, ev.dtendParams || {}) : start;
+    const durationMs = end.date ? (end.date.getTime() - start.date.getTime()) : 0;
+
+    if (!ev.rrule) {
+
+      const eventEnd = end.date || start.date;
+
+      if (start.date < rangeEnd && eventEnd > rangeStart) {
+        out.push(toEvent(ev, start.date, eventEnd, start.allDay));
+      }
+
+      continue;
+
+    }
+
+    const occurrences = expandRrule(ev.rrule, start.date, rangeEnd, ev.exdate || []);
+
+    for (const occStart of occurrences) {
+
+      const occEnd = new Date(occStart.getTime() + durationMs);
+
+      if (occStart < rangeEnd && occEnd > rangeStart) {
+        out.push(toEvent(ev, occStart, occEnd, start.allDay));
+      }
+
+    }
+
+  }
+
+  out.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  return out;
 
 }
 
