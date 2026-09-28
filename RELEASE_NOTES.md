@@ -1,3 +1,49 @@
+# Daily Life v0.2.8
+
+_27 September 2026_
+
+## Performance
+
+- Added edge caching (Cloudflare Cache API) in the Worker for Airtable-backed read endpoints, to stay within Airtable's free-plan limit of 1,000 API calls/month.
+- Recipes and meal plan cached 10 minutes; to-do options (Category/Status choices) cached 1 hour.
+- To-dos cached 45 seconds, and the cache is purged immediately on any create/update/delete so changes still show up promptly everywhere.
+- Prompted by hitting 80% of the monthly Airtable API cap during development alone — every page reload had been re-fetching recipes/to-dos/meal-plan fresh, since the client-side cache resets on reload.
+
+## Changed
+
+- No Airtable schema changes. No frontend changes — `worker.js` only.
+
+# Daily Life v0.2.7
+
+_27 September 2026_
+
+## New: Events module
+
+- Google Calendar surfaced on Home (replacing the Shopping tile) and a new dedicated Events screen.
+- New "Events" tab in the bottom navigation.
+- Reads the family's shared calendar directly via its private ICS feed — no Airtable involved, no write access from the app.
+- Events screen shows the next 14 days, grouped by day; the Home tile shows a live count for the next 7 days.
+- "Add event" opens Google Calendar in a new tab rather than creating events in-app.
+
+## User action
+
+- Add `CALENDAR_ICS_URL` as a new Worker secret (Google Calendar → calendar settings → "Secret address in iCal format").
+
+## Known limitation
+
+- The ICS/RRULE parser is hand-written to stay dependency-free. It covers common recurring-event patterns (daily/weekly/monthly/yearly, with count/until/exceptions) but not the full iCalendar spec — worth testing against the real calendar's recurring events.
+
+# Daily Life v0.2.6
+
+_27 September 2026_
+
+## Changed: Home page layout
+
+- Reworked the Home module grid into larger 2×2 cards, each with a title, subtitle and chevron.
+- Same four modules, same colours, icons and greeting copy as before — visual/layout change only.
+
+---
+
 # Daily Life v0.2.4
 
 ## Performance / responsiveness

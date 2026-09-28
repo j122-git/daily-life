@@ -31,6 +31,34 @@ const TODOS_TABLE_ID = "tbl5UZaswultCt19p";
 
 
 /* =========================================================
+   EDGE CACHE (Cloudflare Cache API)
+
+   Airtable's free plan allows only 1,000 API calls/month, so read
+   endpoints are cached at the edge to keep repeated app loads (dev
+   reloads included) from spending that budget:
+
+     Recipes         10 min  — rarely changes
+     Meal plan       10 min  — rarely changes
+     To-do options    1 hour — schema rarely changes
+     To-dos          45 sec  — purged immediately on any create/
+                               update/delete, so changes still show
+                               up promptly everywhere
+
+   The calendar feed (/api/events) has its own separate cache further
+   down — it doesn't touch Airtable at all, so isn't part of this budget.
+   ========================================================= */
+
+const CACHE_TTL = {
+  RECIPES: 600,
+  MEAL_PLAN: 600,
+  TODO_OPTIONS: 3600,
+  TODOS: 45
+};
+
+const TODOS_CACHE_KEY = "https://daily-life-cache.internal/todos";
+
+
+/* =========================================================
    WORKER
    ========================================================= */
 
@@ -355,51 +383,48 @@ async function getRecipes(
   corsHeaders
 ) {
 
-  const params = new URLSearchParams();
+  return withCache(
+    "https://daily-life-cache.internal/recipes",
+    CACHE_TTL.RECIPES,
+    corsHeaders,
+    async () => {
 
-  params.set("pageSize", "100");
+      const params = new URLSearchParams();
 
-  /*
-   * Airtable returns records in chunks if there
-   * are more than 100.
-   *
-   * We currently keep this intentionally simple.
-   */
-  const airtableUrl =
-    `https://api.airtable.com/v0/${BASE_ID}/${RECIPES_TABLE_ID}?${params}`;
+      params.set("pageSize", "100");
 
+      /*
+       * Airtable returns records in chunks if there
+       * are more than 100.
+       *
+       * We currently keep this intentionally simple.
+       */
+      const airtableUrl =
+        `https://api.airtable.com/v0/${BASE_ID}/${RECIPES_TABLE_ID}?${params}`;
 
-  const response = await fetch(
-    airtableUrl,
-    {
-      headers: {
-        "Authorization":
-          `Bearer ${env.AIRTABLE_TOKEN}`
+      const response = await fetch(
+        airtableUrl,
+        {
+          headers: {
+            "Authorization":
+              `Bearer ${env.AIRTABLE_TOKEN}`
+          }
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { error: "Airtable recipes request failed", details: data, status: 502 };
       }
+
+      const recipes =
+        (data.records || []).map(normaliseRecipe);
+
+      return { data: { recipes } };
+
     }
   );
-
-
-  const data = await response.json();
-
-
-  if (!response.ok) {
-
-    return json({
-      error: "Airtable recipes request failed",
-      details: data
-    }, 502, corsHeaders);
-
-  }
-
-
-  const recipes =
-    (data.records || []).map(normaliseRecipe);
-
-
-  return json({
-    recipes
-  }, 200, corsHeaders);
 
 }
 
@@ -575,91 +600,93 @@ async function getMealPlan(
   corsHeaders
 ) {
 
-  const params = new URLSearchParams();
+  return withCache(
+    `https://daily-life-cache.internal/meal-plan?${url.searchParams.toString()}`,
+    CACHE_TTL.MEAL_PLAN,
+    corsHeaders,
+    async () => {
 
-  params.set("pageSize", "100");
+      const params = new URLSearchParams();
 
-
-  /*
-   * Optional date range.
-   *
-   * Default = current week around today.
-   */
-  const start =
-    url.searchParams.get("start");
-
-  const end =
-    url.searchParams.get("end");
+      params.set("pageSize", "100");
 
 
-  if (start && end) {
+      /*
+       * Optional date range.
+       *
+       * Default = current week around today.
+       */
+      const start =
+        url.searchParams.get("start");
 
-    /*
-     * Weekly plan's date field is called "Date".
-     *
-     * Airtable formula is used rather than relying
-     * on the API's date filtering.
-     */
-
-    params.set(
-      "filterByFormula",
-      `AND(
-        IS_AFTER({Date}, '${start}'),
-        IS_BEFORE({Date}, '${end}')
-      )`
-    );
-
-  }
+      const end =
+        url.searchParams.get("end");
 
 
-  params.set(
-    "sort[0][field]",
-    "Date"
-  );
+      if (start && end) {
 
-  params.set(
-    "sort[0][direction]",
-    "asc"
-  );
+        /*
+         * Weekly plan's date field is called "Date".
+         *
+         * Airtable formula is used rather than relying
+         * on the API's date filtering.
+         */
 
+        params.set(
+          "filterByFormula",
+          `AND(
+            IS_AFTER({Date}, '${start}'),
+            IS_BEFORE({Date}, '${end}')
+          )`
+        );
 
-  const airtableUrl =
-    `https://api.airtable.com/v0/${BASE_ID}/${MEAL_PLAN_TABLE_ID}?${params}`;
-
-
-  const response = await fetch(
-    airtableUrl,
-    {
-      headers: {
-        "Authorization":
-          `Bearer ${env.AIRTABLE_TOKEN}`
       }
+
+
+      params.set(
+        "sort[0][field]",
+        "Date"
+      );
+
+      params.set(
+        "sort[0][direction]",
+        "asc"
+      );
+
+
+      const airtableUrl =
+        `https://api.airtable.com/v0/${BASE_ID}/${MEAL_PLAN_TABLE_ID}?${params}`;
+
+
+      const response = await fetch(
+        airtableUrl,
+        {
+          headers: {
+            "Authorization":
+              `Bearer ${env.AIRTABLE_TOKEN}`
+          }
+        }
+      );
+
+
+      const data = await response.json();
+
+
+      if (!response.ok) {
+        return { error: "Airtable meal plan request failed", details: data, status: 502 };
+      }
+
+
+      const mealPlan =
+        (data.records || []).map(
+          normaliseMealPlanRecord
+        );
+
+
+      return { data: { mealPlan } };
+
     }
   );
-
-
-  const data = await response.json();
-
-
-  if (!response.ok) {
-
-    return json({
-      error: "Airtable meal plan request failed",
-      details: data
-    }, 502, corsHeaders);
-
-  }
-
-
-  const mealPlan =
-    (data.records || []).map(
-      normaliseMealPlanRecord
-    );
-
-
-  return json({
-    mealPlan
-  }, 200, corsHeaders);
 
 }
 
@@ -782,59 +809,61 @@ async function getTodos(
   corsHeaders
 ) {
 
-  const params = new URLSearchParams();
+  return withCache(
+    TODOS_CACHE_KEY,
+    CACHE_TTL.TODOS,
+    corsHeaders,
+    async () => {
 
-  params.set("pageSize", "100");
+      const params = new URLSearchParams();
 
-
-  params.set(
-    "sort[0][field]",
-    "Due"
-  );
-
-  params.set(
-    "sort[0][direction]",
-    "asc"
-  );
+      params.set("pageSize", "100");
 
 
-  const airtableUrl =
-    `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}?${params}`;
+      params.set(
+        "sort[0][field]",
+        "Due"
+      );
+
+      params.set(
+        "sort[0][direction]",
+        "asc"
+      );
 
 
-  const response = await fetch(
-    airtableUrl,
-    {
-      headers: {
-        "Authorization":
-          `Bearer ${env.AIRTABLE_TOKEN}`
+      const airtableUrl =
+        `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}?${params}`;
+
+
+      const response = await fetch(
+        airtableUrl,
+        {
+          headers: {
+            "Authorization":
+              `Bearer ${env.AIRTABLE_TOKEN}`
+          }
+        }
+      );
+
+
+      const data = await response.json();
+
+
+      if (!response.ok) {
+        return { error: "Airtable todos request failed", details: data, status: 502 };
       }
+
+
+      const todos =
+        (data.records || []).map(
+          normaliseTodo
+        );
+
+
+      return { data: { todos } };
+
     }
   );
-
-
-  const data = await response.json();
-
-
-  if (!response.ok) {
-
-    return json({
-      error: "Airtable todos request failed",
-      details: data
-    }, 502, corsHeaders);
-
-  }
-
-
-  const todos =
-    (data.records || []).map(
-      normaliseTodo
-    );
-
-
-  return json({
-    todos
-  }, 200, corsHeaders);
 
 }
 
@@ -844,31 +873,42 @@ async function getTodos(
    ========================================================= */
 
 async function getTodoOptions(env, corsHeaders) {
-  const url = `https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`;
-  const response = await fetch(url, {
-    headers: { "Authorization": `Bearer ${env.AIRTABLE_TOKEN}` }
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    return json({
-      error: "Airtable schema request failed",
-      details: data
-    }, 502, corsHeaders);
-  }
 
-  const table = (data.tables || []).find(t => t.id === TODOS_TABLE_ID);
-  const fields = table?.fields || [];
-  const categoryField = fields.find(f => f.name === "Category");
-  const statusField = fields.find(f => f.name === "Status");
+  return withCache(
+    "https://daily-life-cache.internal/todo-options",
+    CACHE_TTL.TODO_OPTIONS,
+    corsHeaders,
+    async () => {
 
-  const choices = field => Array.isArray(field?.options?.choices)
-    ? field.options.choices.map(c => c.name).filter(Boolean)
-    : [];
+      const url = `https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`;
+      const response = await fetch(url, {
+        headers: { "Authorization": `Bearer ${env.AIRTABLE_TOKEN}` }
+      });
+      const data = await response.json();
 
-  return json({
-    categories: choices(categoryField),
-    statuses: choices(statusField)
-  }, 200, corsHeaders);
+      if (!response.ok) {
+        return { error: "Airtable schema request failed", details: data, status: 502 };
+      }
+
+      const table = (data.tables || []).find(t => t.id === TODOS_TABLE_ID);
+      const fields = table?.fields || [];
+      const categoryField = fields.find(f => f.name === "Category");
+      const statusField = fields.find(f => f.name === "Status");
+
+      const choices = field => Array.isArray(field?.options?.choices)
+        ? field.options.choices.map(c => c.name).filter(Boolean)
+        : [];
+
+      return {
+        data: {
+          categories: choices(categoryField),
+          statuses: choices(statusField)
+        }
+      };
+
+    }
+  );
+
 }
 
 
@@ -1104,6 +1144,9 @@ async function createTodo(
   }
 
 
+  await purgeCache(TODOS_CACHE_KEY);
+
+
   return json({
 
     ok: true,
@@ -1249,6 +1292,9 @@ async function updateTodo(
   }
 
 
+  await purgeCache(TODOS_CACHE_KEY);
+
+
   return json({
 
     ok: true,
@@ -1302,6 +1348,9 @@ async function deleteTodo(
   }
 
 
+  await purgeCache(TODOS_CACHE_KEY);
+
+
   return json({
 
     ok: true,
@@ -1351,7 +1400,9 @@ async function getEvents(
   /*
    * Short server-side cache so the app doesn't re-fetch the whole
    * calendar from Google on every load. Client already caches for
-   * 60s on top of this.
+   * 60s on top of this. This is separate from the Airtable edge
+   * cache above — Google's ICS feed doesn't count against Airtable's
+   * monthly API budget at all.
    */
   const cache = caches.default;
 
@@ -1785,6 +1836,57 @@ function extractAttachment(value) {
 
   return String(value);
 
+}
+
+
+/* =========================================================
+   EDGE CACHE HELPERS
+   ========================================================= */
+
+/*
+ * Serves a GET response from the edge cache when available;
+ * otherwise runs `loader`, caches a successful result, and
+ * returns it. `loader` resolves to either { data } or
+ * { error, details, status } — errors are never cached.
+ */
+async function withCache(cacheUrl, ttlSeconds, corsHeaders, loader) {
+
+  const cache = caches.default;
+  const cacheKey = new Request(cacheUrl, { method: "GET" });
+
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const result = await loader();
+
+  if (result.error) {
+    return json({
+      error: result.error,
+      details: result.details
+    }, result.status || 502, corsHeaders);
+  }
+
+  const response = new Response(JSON.stringify(result.data), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": `max-age=${ttlSeconds}`,
+      ...corsHeaders
+    }
+  });
+
+  await cache.put(cacheKey, response.clone());
+
+  return response;
+
+}
+
+/*
+ * Removes a cached entry — used after writes so the next read
+ * is guaranteed fresh rather than waiting out the TTL.
+ */
+async function purgeCache(cacheUrl) {
+  await caches.default.delete(new Request(cacheUrl, { method: "GET" }));
 }
 
 
