@@ -1,3 +1,30 @@
+# Daily Life v0.2.10
+
+_28 September 2026_
+
+## Changed: Home greeting
+
+- The Home greeting and its icon now change with the time of day: "Good morning" (sunrise), "Good afternoon" (sun), "Good evening" (sunset), "Good night" (moon).
+- Boundaries: morning 05:00, afternoon 12:00, evening 17:00, night 21:00 — a default, easy to adjust.
+
+## Notes
+
+- No Airtable schema changes. `worker.js` and `navigation.js` untouched.
+
+# Daily Life v0.2.9
+
+_28 September 2026_
+
+## Changed: Icons
+
+- Replaced all emoji/symbol glyphs across the app with real icons (Lucide, inline SVG) — navigation, header, Home cards, recipe detail, to-do screen, events screen, connection/token screens, and modals.
+- New `icons.js` file (small inline SVG icon set + `icon(name)` helper); `index.html` now loads it before `app.js`.
+- PWA home-screen icon not included in this pass.
+
+## Notes
+
+- No Airtable schema changes. `worker.js` and `navigation.js` untouched.
+
 # Daily Life v0.2.8
 
 _27 September 2026_
