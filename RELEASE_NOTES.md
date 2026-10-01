@@ -1,3 +1,17 @@
+# Daily Life v0.2.12
+
+_1 October 2026_
+
+## Bug fix: filter bar overflow
+
+- The To do filter bar (All/Overdue/Today/Upcoming/Done) overflowed phone screen width after the "Overdue" pill was added in v0.2.11, requiring a horizontal scroll to reach "Done".
+- Tightened pill padding and spacing; all 5 pills now fit on screen without scrolling on typical phone widths.
+- Also benefits the Recipes screen's filter pills, which share the same styles.
+
+## Notes
+
+- No Airtable schema changes. `styles.css` only.
+
 # Daily Life v0.2.11
 
 _30 September 2026_
