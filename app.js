@@ -54,7 +54,21 @@ function bucket(t){
   if(!due)return"upcoming";
   if(due===today())return"today";
   if(due===tomorrow())return"tomorrow";
+  if(due<today()&&todoStatusClass(t?.status)!=="done")return"overdue";
   return"upcoming";
+}
+// Whole-day difference between a YYYY-MM-DD due date and today, ignoring time-of-day.
+function daysOverdue(due){
+  const raw=todoDate(due);
+  if(!raw)return 0;
+  const [y,m,d]=raw.split("-").map(Number);
+  const [ty,tm,td]=today().split("-").map(Number);
+  const ms=new Date(ty,tm-1,td)-new Date(y,m-1,d);
+  return Math.round(ms/86400000);
+}
+function overdueLabel(due){
+  const n=daysOverdue(due);
+  return `${n} day${n===1?"":"s"} overdue`;
 }
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:26px;color:var(--green)">${icon("soup")}</div>`}
 function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">${icon("house")}</span>Home</button><button class="nav ${a==="recipes"?"active":""}" onclick="show('recipes')"><span class="ni">${icon("book-open")}</span>Recipes</button><button class="nav ${a==="todo"?"active":""}" onclick="show('todo')"><span class="ni">${icon("list-checks")}</span>Lists</button><button class="nav ${a==="events"?"active":""}" onclick="show('events')"><span class="ni">${icon("calendar-days")}</span>Events</button><button class="nav" onclick="toast('More coming soon')"><span class="ni">${icon("ellipsis")}</span>More</button></nav>`}
@@ -303,6 +317,7 @@ function statusLabel(status){
 function filteredTodos(){
   let ts=[...state.todos];
   if(todoFilter==="Today") ts=ts.filter(t=>bucket(t)==="today");
+  else if(todoFilter==="Overdue") ts=ts.filter(t=>bucket(t)==="overdue");
   else if(todoFilter==="Upcoming") ts=ts.filter(t=>todoStatusClass(t.status)!=="done" && (bucket(t)==="tomorrow"||bucket(t)==="upcoming"));
   else if(todoFilter==="Done") ts=ts.filter(t=>todoStatusClass(t.status)==="done");
   ts.sort((a,b)=>{
@@ -350,18 +365,19 @@ async function saveTodo(id){
 }
 function todo(){
   const ts=filteredTodos();
-  const groups=[ ["today","Today"],["tomorrow","Tomorrow"],["upcoming","Upcoming"] ];
+  const groups=[ ["overdue","Overdue"],["today","Today"],["tomorrow","Tomorrow"],["upcoming","Upcoming"] ];
   let sections="";
   for(const [b,label] of groups){
     const group=ts.filter(t=>t.bucket===b);
     if(!group.length) continue;
-    sections += `<div class="todo-group"><b>${label}</b><span>${group.filter(t=>todoStatusClass(t.status)!=="done").length} remaining</span></div>`;
+    const isOverdueGroup=b==="overdue";
+    sections += `<div class="todo-group${isOverdueGroup?" overdue":""}"><b>${label}</b><span>${group.filter(t=>todoStatusClass(t.status)!=="done").length} remaining</span></div>`;
     for(const t of group){
       const sc=todoStatusClass(t.status);
       const tag=t.category?`<span class="tag ${esc(t.category)}">${esc(t.category)}</span>`:"";
-      const due=t.due?`<div class="sub">${esc(dateLabel(t.due))}</div>`:"";
+      const due=t.due?`<div class="sub${isOverdueGroup?" overdue-date":""}">${isOverdueGroup?overdueLabel(t.due):esc(dateLabel(t.due))}</div>`:"";
       const stateText=sc==="progress"?`<span class="status-text">In progress</span>`:"";
-      sections += `<div class="card row todo-row">
+      sections += `<div class="card row todo-row${isOverdueGroup?" overdue":""}">
         <button aria-label="Change task status" class="check ${sc}" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button>
         <div class="grow" onclick="editTodo('${esc(t.id)}')" style="cursor:pointer">
           <div class="title ${sc==="done"?"completed":""}">${esc(t.task)}</div>${stateText}${tag}${due}
@@ -369,10 +385,10 @@ function todo(){
         <button class="chev" onclick="editTodo('${esc(t.id)}')" aria-label="Edit task">${icon("chevron-right")}</button></div>`;
     }
   }
-  return `<div class="shell">${header("To do",false)}<main class="page"><div style="display:flex;justify-content:space-between;align-items:center"><h1 class="screen-title">To do</h1><button class="plus" onclick="openTodoForm()" aria-label="Add task">${icon("plus")}</button></div><div class="filterbar">${["All","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first "+icon("arrow-down"):"Oldest first "+icon("arrow-up")}</button></div>${sections||'<div class="empty">No tasks found.</div>'}</main>${nav("todo")}</div>`;
+  return `<div class="shell">${header("To do",false)}<main class="page"><div style="display:flex;justify-content:space-between;align-items:center"><h1 class="screen-title">To do</h1><button class="plus" onclick="openTodoForm()" aria-label="Add task">${icon("plus")}</button></div><div class="filterbar">${["All","Overdue","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first "+icon("arrow-down"):"Oldest first "+icon("arrow-up")}</button></div>${sections||'<div class="empty">No tasks found.</div>'}</main>${nav("todo")}</div>`;
 }
 function editTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;openTodoForm(t);load("todo-options")}
-async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;const previous=t.status,status=nextTodoStatus(previous);t.status=status;show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})});markLoaded("todos")}catch(e){t.status=previous;show("todo");toast("Couldn't update task: "+e.message)}}
+async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;const previous=t.status,status=nextTodoStatus(previous);t.status=status;t.bucket=bucket(t);show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})});markLoaded("todos")}catch(e){t.status=previous;t.bucket=bucket(t);show("todo");toast("Couldn't update task: "+e.message)}}
 async function deleteTodo(id){if(!confirm("Delete this task?"))return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"DELETE"});state.todos=state.todos.filter(x=>x.id!==id);markLoaded("todos");closeTodoForm();toast("Task deleted");show("todo")}catch(e){toast("Couldn't delete task: "+e.message)}}
 function events(){
   const groups=groupEventsByDay(state.events);

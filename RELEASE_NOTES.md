@@ -1,3 +1,19 @@
+# Daily Life v0.2.11
+
+_30 September 2026_
+
+## New: Overdue tasks
+
+- The To do screen now flags overdue tasks instead of mixing them silently into "Upcoming".
+- New "Overdue" group, pinned above Today, red-accented — only tasks with a past due date and status ≠ Done.
+- Due date reads "N day(s) overdue" in red for those tasks.
+- New "Overdue" filter pill alongside All/Today/Upcoming/Done.
+- A completed task is never flagged overdue, however late it was finished.
+
+## Notes
+
+- No Airtable schema changes. `worker.js` and `navigation.js` untouched.
+
 # Daily Life v0.2.10
 
 _28 September 2026_
