@@ -8,6 +8,8 @@
  * Recipes = tbllpksHl60IWWk57
  * Weekly plan = tblZFGDTnJzW0ekr9
  * To do = tbl5UZaswultCt19p
+ * Ingredients = tblK8uUPdQ3s43ZOk
+ * Ingredients Quantities = tbl70xlNT8xvPCDOP
  *
  * Environment variables / Secrets:
  * AIRTABLE_TOKEN
@@ -28,6 +30,8 @@ const BASE_ID = "appPPhBgdyZn98k4w";
 const RECIPES_TABLE_ID = "tbllpksHl60IWWk57";
 const MEAL_PLAN_TABLE_ID = "tblZFGDTnJzW0ekr9";
 const TODOS_TABLE_ID = "tbl5UZaswultCt19p";
+const INGREDIENTS_TABLE_ID = "tblK8uUPdQ3s43ZOk";
+const INGREDIENT_QUANTITIES_TABLE_ID = "tbl70xlNT8xvPCDOP";
 
 
 /* =========================================================
@@ -37,7 +41,9 @@ const TODOS_TABLE_ID = "tbl5UZaswultCt19p";
    endpoints are cached at the edge to keep repeated app loads (dev
    reloads included) from spending that budget:
 
-     Recipes         10 min  — rarely changes
+     Recipes         1 hour  — rarely changes; one payload covers
+                               Recipes + Ingredients Quantities + Ingredients
+                               (about 5 Airtable calls per refresh)
      Meal plan       10 min  — rarely changes
      To-do options    1 hour — schema rarely changes
      To-dos          45 sec  — purged immediately on any create/
@@ -49,7 +55,7 @@ const TODOS_TABLE_ID = "tbl5UZaswultCt19p";
    ========================================================= */
 
 const CACHE_TTL = {
-  RECIPES: 600,
+  RECIPES: 3600,
   MEAL_PLAN: 600,
   TODO_OPTIONS: 3600,
   TODOS: 45
@@ -375,7 +381,62 @@ export default {
 
 /* =========================================================
    RECIPES — LIST
+   =========================================================
+   One cached payload holds every recipe with its ingredients,
+   read from three tables:
+
+     Recipes              recipe details
+     Ingredients Quantities  recipe + ingredient + quantity + unit
+     Ingredients          ingredient names
+
+   Airtable returns max 100 records per page, so each table is
+   read page by page.
    ========================================================= */
+
+const RECIPES_CACHE_KEY = "https://daily-life-cache.internal/recipes";
+
+async function fetchAllRecords(tableId, env) {
+
+  const records = [];
+  let offset = null;
+  let pages = 0;
+
+  do {
+
+    const params = new URLSearchParams();
+
+    params.set("pageSize", "100");
+
+    if (offset) {
+      params.set("offset", offset);
+    }
+
+    const response = await fetch(
+      `https://api.airtable.com/v0/${BASE_ID}/${tableId}?${params}`,
+      {
+        headers: {
+          "Authorization":
+            `Bearer ${env.AIRTABLE_TOKEN}`
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return { error: data };
+    }
+
+    records.push(...(data.records || []));
+
+    offset = data.offset || null;
+    pages++;
+
+  } while (offset && pages < 10);
+
+  return { records };
+
+}
 
 async function getRecipes(
   url,
@@ -384,42 +445,54 @@ async function getRecipes(
 ) {
 
   return withCache(
-    "https://daily-life-cache.internal/recipes",
+    RECIPES_CACHE_KEY,
     CACHE_TTL.RECIPES,
     corsHeaders,
     async () => {
 
-      const params = new URLSearchParams();
+      const [recipeResult, quantityResult, ingredientResult] =
+        await Promise.all([
+          fetchAllRecords(RECIPES_TABLE_ID, env),
+          fetchAllRecords(INGREDIENT_QUANTITIES_TABLE_ID, env),
+          fetchAllRecords(INGREDIENTS_TABLE_ID, env)
+        ]);
 
-      params.set("pageSize", "100");
+      const failed =
+        [recipeResult, quantityResult, ingredientResult]
+          .find(result => result.error);
 
-      /*
-       * Airtable returns records in chunks if there
-       * are more than 100.
-       *
-       * We currently keep this intentionally simple.
-       */
-      const airtableUrl =
-        `https://api.airtable.com/v0/${BASE_ID}/${RECIPES_TABLE_ID}?${params}`;
+      if (failed) {
+        return { error: "Airtable recipes request failed", details: failed.error, status: 502 };
+      }
 
-      const response = await fetch(
-        airtableUrl,
-        {
-          headers: {
-            "Authorization":
-              `Bearer ${env.AIRTABLE_TOKEN}`
-          }
-        }
+      const ingredientNames = new Map(
+        ingredientResult.records.map(record => [
+          record.id,
+          firstValue(record.fields || {}, ["Name"])
+        ])
       );
 
-      const data = await response.json();
+      const linesByRecipe = new Map();
 
-      if (!response.ok) {
-        return { error: "Airtable recipes request failed", details: data, status: 502 };
+      for (const record of quantityResult.records) {
+
+        const recipeId = ((record.fields || {})["Recipe"] || [])[0];
+        const line = normaliseIngredientLine(record, ingredientNames);
+
+        if (!recipeId || !line) continue;
+
+        if (!linesByRecipe.has(recipeId)) {
+          linesByRecipe.set(recipeId, []);
+        }
+
+        linesByRecipe.get(recipeId).push(line);
+
       }
 
       const recipes =
-        (data.records || []).map(normaliseRecipe);
+        recipeResult.records.map(record =>
+          normaliseRecipe(record, linesByRecipe.get(record.id) || [])
+        );
 
       return { data: { recipes } };
 
@@ -431,6 +504,9 @@ async function getRecipes(
 
 /* =========================================================
    RECIPES — SINGLE
+   =========================================================
+   Served from the same cached payload as the list, so opening
+   a recipe costs no extra Airtable calls.
    ========================================================= */
 
 async function getRecipe(
@@ -439,37 +515,116 @@ async function getRecipe(
   corsHeaders
 ) {
 
-  const airtableUrl =
-    `https://api.airtable.com/v0/${BASE_ID}/${RECIPES_TABLE_ID}/${recordId}`;
+  const listResponse =
+    await getRecipes(null, env, corsHeaders);
 
+  if (!listResponse.ok) {
+    return listResponse;
+  }
 
-  const response = await fetch(
-    airtableUrl,
-    {
-      headers: {
-        "Authorization":
-          `Bearer ${env.AIRTABLE_TOKEN}`
-      }
-    }
-  );
+  const { recipes } = await listResponse.json();
 
+  const recipe =
+    (recipes || []).find(r => r.id === recordId);
 
-  const data = await response.json();
-
-
-  if (!response.ok) {
+  if (!recipe) {
 
     return json({
-      error: "Airtable recipe request failed",
-      details: data
-    }, 502, corsHeaders);
+      error: "Recipe not found"
+    }, 404, corsHeaders);
 
   }
 
-
   return json({
-    recipe: normaliseRecipe(data)
+    recipe
   }, 200, corsHeaders);
+
+}
+
+
+/* =========================================================
+   NORMALISE INGREDIENT LINE
+   =========================================================
+   One row of the Ingredients Quantities table. Displays the
+   quantity as originally written (Original Quantity / Unit),
+   falling back to the base quantity/unit.
+   ========================================================= */
+
+function formatQuantity(value) {
+  return String(Math.round(Number(value) * 100) / 100);
+}
+
+function normaliseIngredientLine(record, ingredientNames) {
+
+  const fields = record.fields || {};
+
+  const ingredientId =
+    (fields["Ingredient"] || [])[0] || null;
+
+  const ingredientName =
+    ingredientId ? ingredientNames.get(ingredientId) : null;
+
+  const label =
+    firstValue(fields, ["Name"]);
+
+  const name = ingredientName || label;
+
+  if (!name) {
+    return null;
+  }
+
+  const usesOriginal =
+    fields["Original Quantity"] !== undefined &&
+    fields["Original Quantity"] !== null;
+
+  const quantity =
+    usesOriginal
+      ? fields["Original Quantity"]
+      : firstValue(fields, ["Quantity (base)"]);
+
+  const unit =
+    (usesOriginal
+      ? fields["Original Unit"]
+      : fields["Unit (base)"]) || "";
+
+  const preparation = fields["Preparation"] || "";
+
+  const optional = Boolean(fields["Optional?"]);
+
+  let text;
+
+  if (quantity !== null && quantity !== undefined) {
+
+    const tightUnit =
+      ["g", "kg", "ml", "l"].includes(String(unit).toLowerCase());
+
+    const unitText =
+      unit ? `${tightUnit ? "" : " "}${unit}` : "";
+
+    text = `${formatQuantity(quantity)}${unitText} ${name}`;
+
+  } else {
+
+    /*
+     * No numeric quantity (e.g. "handful"): the row's own
+     * label already reads naturally.
+     */
+    text = label || name;
+
+  }
+
+  if (preparation) text += `, ${preparation}`;
+  if (optional) text += " (optional)";
+
+  return {
+    id: record.id,
+    name,
+    quantity: quantity ?? null,
+    unit: unit || null,
+    preparation: preparation || null,
+    optional,
+    text
+  };
 
 }
 
@@ -478,7 +633,7 @@ async function getRecipe(
    NORMALISE RECIPE
    ========================================================= */
 
-function normaliseRecipe(record) {
+function normaliseRecipe(record, ingredients = []) {
 
   const fields = record.fields || {};
 
@@ -540,6 +695,7 @@ function normaliseRecipe(record) {
       firstValue(
         fields,
         [
+          "Cooking time (mins)",
           "Cooking time",
           "Cooking Time",
           "Total time",
@@ -575,15 +731,17 @@ function normaliseRecipe(record) {
         ]
       ),
 
-    ingredients:
+    sourceUrl:
       firstValue(
         fields,
         [
-          "Ingredients"
+          "link",
+          "Link",
+          "Source URL"
         ]
-      ) || [],
+      ),
 
-    raw: fields
+    ingredients
 
   };
 

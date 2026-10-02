@@ -1,3 +1,32 @@
+# Daily Life v0.3.0
+
+_2 October 2026_
+
+## New: Meals hub and recipe view
+
+- The Home "Meal plan" tile is now **Meals** and opens a hub with **Recipes** and **Meal plan**. The bottom-nav "Recipes" tab is now **Meals** and opens the same hub.
+- Meal plan is a "Coming next" placeholder until v0.3.1.
+- Recipe screen: ingredients now show quantity, unit and name (e.g. "200 g tat soi, chopped") instead of raw Airtable IDs, read from the existing Ingredients Quantities and Ingredients tables.
+- Ingredients and method steps are tickable. Ticks are saved on the device only, with a "Reset ticks" link. Method steps come from the recipe's `Recipe text`, one step per line.
+- "View original recipe" link shown when the recipe has a `link`.
+- Cooking time reads the new `Cooking time (mins)` field (shown as "30 min").
+- Recipes list: removed the non-functional Quick / Family / Favourites pills; back now returns to the hub.
+
+## Changed: Home
+
+- Removed the week strip and "View all". The Today section now lists today's planned meals (Breakfast, Lunch, Dinner order) and no longer falls back to the first recipe when nothing is planned.
+
+## Performance
+
+- Recipes (with ingredients) are one cached payload covering three Airtable tables, about 5 calls per refresh. Cache extended from 10 minutes to 1 hour to protect the 1,000 calls/month limit. Opening a recipe uses the cache, so costs no extra calls.
+
+## Notes
+
+- Airtable: added `Cooking time (mins)` (number) to Recipes. No other schema changes.
+- Older recipes have few or no Ingredients Quantities rows, so they show few ingredients until filled in.
+- Changes to recipes in Airtable can take up to an hour to appear.
+- Files changed: `worker.js`, `app.js`, `styles.css`, `icons.js`. `navigation.js` untouched.
+
 # Daily Life v0.2.12
 
 _1 October 2026_

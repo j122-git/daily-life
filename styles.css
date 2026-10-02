@@ -363,3 +363,12 @@ button{font:inherit;border:0;cursor:pointer}.icon{width:1em;height:1em;flex:none
 .primary-button .icon{margin-left:6px}
 .secondary-button .icon{margin-right:6px}
 .sort-button .icon{width:14px;height:14px}
+
+/* Meals v0.3.0 */
+.section-row{display:flex;justify-content:space-between;align-items:center;margin:18px 0 4px}
+.section-row h3{margin:0;font-size:15px}
+.tick-row{display:flex;align-items:flex-start;gap:10px;width:100%;padding:10px 0;border-top:1px solid rgba(22,54,82,.08);background:none;color:var(--navy);text-align:left;font-size:13px;line-height:1.45}
+.tick-circle{width:20px;height:20px;border:1.5px solid #87969a;border-radius:50%;flex:none;margin-top:1px}
+.tick-row.ticked .tick-circle{background:var(--green);border-color:var(--green)}
+.tick-row.ticked .tick-text{text-decoration:line-through;opacity:.58}
+.source-link{display:inline-flex;align-items:center;gap:5px;margin:0 0 4px;text-decoration:none}
