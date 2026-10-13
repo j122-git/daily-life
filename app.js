@@ -325,7 +325,7 @@ function plan(){
     }).join("");
     return `<div class="plan-day${day===today()?" today":""}"><h3>${label}</h3>${slots}</div>`;
   }).join("");
-  return `<div class="shell">${header("Meal plan",true,"meals")}<main class="page"><div class="week-nav"><button class="back" onclick="planShift(-7)" aria-label="Previous week">${icon("chevron-left")}</button><div class="week-label">${fmt(days[0])} – ${fmt(days[6])}${current?"":`<button class="link" onclick="planToday()">This week</button>`}</div><button class="back" onclick="planShift(7)" aria-label="Next week">${icon("chevron-right")}</button></div>${body}</main>${nav("meals")}</div>`;
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Meals",page:"meals"},{label:"Meal plan"}])}<h1 class="screen-title page-title">Meal plan</h1><div class="week-nav"><button class="back" onclick="planShift(-7)" aria-label="Previous week">${icon("chevron-left")}</button><div class="week-label">${fmt(days[0])} – ${fmt(days[6])}${current?"":`<button class="link" onclick="planToday()">This week</button>`}</div><button class="back" onclick="planShift(7)" aria-label="Next week">${icon("chevron-right")}</button></div>${body}</main>${nav("meals")}</div>`;
 }
 // Re-render the plan screen in place, keeping the scroll position.
 function rerenderPlan(){
@@ -427,9 +427,48 @@ function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="D
 function cookTime(v){if(v===null||v===undefined||v==="")return"";return typeof v==="number"?`${v} min`:String(v)}
 function meals(){
   const n=cacheMeta.recipes.loaded?state.recipes.length:0;
-  return `<div class="shell">${header("Meals",true)}<main class="page"><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">${icon("book-open")}</div><div class="module-title">Recipes</div><div class="module-sub">${n?`${n} recipe${n===1?"":"s"}`:"Browse and cook"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('plan')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Meal plan</div><div class="module-sub">${esc(planCountText())}<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("meals")}</div>`;
+  return `<div class="shell">${header()}<main class="page"><h1 class="screen-title page-title">Meals</h1><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">${icon("book-open")}</div><div class="module-title">Recipes</div><div class="module-sub">${n?`${n} recipe${n===1?"":"s"}`:"Browse and cook"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('plan')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Meal plan</div><div class="module-sub">${esc(planCountText())}<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("meals")}</div>`;
 }
-function recipes(){return `<div class="shell">${header("Recipes",true,"meals")}<main class="page">${state.recipes.map(r=>`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${[r.cuisine,cookTime(r.cookingTime),r.servings?`${r.servings} servings`:""].filter(Boolean).map(esc).join(" · ")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")||'<div class="empty">No recipes found.</div>'}</main>${nav("meals")}</div>`}
+/* ---- Recipes list: search + filter pills (v0.3.3) ---- */
+let recipeQuery="",recipeFilter="All";
+function crumbs(items){
+  return `<nav class="crumbs" aria-label="Breadcrumb">${items.map(c=>c.page?`<button onclick="show('${c.page}')">${esc(c.label)}</button>`:`<span aria-current="page">${esc(c.label)}</span>`).join('<span class="sep" aria-hidden="true">/</span>')}</nav>`;
+}
+function recipeFilters(){
+  const cuisines=[...new Set(state.recipes.map(r=>r.cuisine).filter(c=>typeof c==="string"&&c.trim()))].sort((a,b)=>a.localeCompare(b));
+  return ["All","Quick",...cuisines];
+}
+function recipePillsHtml(){
+  const filters=recipeFilters();
+  if(!filters.includes(recipeFilter))recipeFilter="All";
+  return filters.map(f=>`<button class="pill${recipeFilter===f?" active":""}" data-f="${esc(f)}" onclick="recipeFilterSet(this.dataset.f)">${esc(f)}</button>`).join("");
+}
+function recipeMatches(r){
+  if(recipeFilter==="Quick"){const t=Number(r.cookingTime);if(!(t>0&&t<=30))return false}
+  else if(recipeFilter!=="All"&&r.cuisine!==recipeFilter)return false;
+  const words=recipeQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if(!words.length)return true;
+  const ing=Array.isArray(r.ingredients)?r.ingredients.map(x=>typeof x==="string"?"":(x.name||x.text||"")):[];
+  const hay=[r.name,r.cuisine,...ing].filter(Boolean).join(" ").toLowerCase();
+  return words.every(w=>hay.includes(w));
+}
+function recipeListHtml(){
+  const list=state.recipes.filter(recipeMatches);
+  if(!state.recipes.length)return'<div class="empty">No recipes found.</div>';
+  if(!list.length)return'<div class="empty">No recipes match your search.</div>';
+  return list.map(r=>`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${[r.cuisine,cookTime(r.cookingTime),r.servings?`${r.servings} servings`:""].filter(Boolean).map(esc).join(" · ")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("");
+}
+function refreshRecipeList(){
+  const list=byId("recipe-list");if(list)list.innerHTML=recipeListHtml();
+  const clear=byId("recipe-search-clear");if(clear)clear.hidden=!recipeQuery;
+}
+function recipeSearch(value){recipeQuery=String(value||"");refreshRecipeList()}
+function clearRecipeSearch(){recipeQuery="";const input=byId("recipe-search");if(input){input.value="";input.focus()}refreshRecipeList()}
+function recipeFilterSet(name){recipeFilter=name;const pills=byId("recipe-filters");if(pills)pills.innerHTML=recipePillsHtml();refreshRecipeList()}
+function recipes(){
+  const pills=recipePillsHtml();
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Meals",page:"meals"},{label:"Recipes"}])}<h1 class="screen-title page-title">Recipes</h1><div class="search-wrap">${icon("search")}<input id="recipe-search" type="search" value="${esc(recipeQuery)}" placeholder="Search recipes or ingredients" autocomplete="off" enterkeyhint="search" aria-label="Search recipes" oninput="recipeSearch(this.value)"><button class="search-clear" id="recipe-search-clear" aria-label="Clear search" onclick="clearRecipeSearch()"${recipeQuery?"":" hidden"}>${icon("x")}</button></div><div class="filterbar scroll" id="recipe-filters">${pills}</div><div id="recipe-list">${recipeListHtml()}</div></main>${nav("meals")}</div>`;
+}
 async function recipe(id){const cached=state.recipes.find(x=>x.id===id);if(cached&&(cached.ingredients||cached.recipeText||cached.notes))return renderRecipe(cached);const d=await api(`/api/recipes/${encodeURIComponent(id)}`),r=d.recipe;if(!r)throw Error("Recipe not found");const i=state.recipes.findIndex(x=>x.id===id);if(i>=0)state.recipes[i]={...state.recipes[i],...r};else state.recipes.push(r);return renderRecipe(state.recipes.find(x=>x.id===id)||r)}
 /* Recipe ticks are per device (localStorage), keyed by recipe id. i = ingredients, s = method steps. */
 const TICKS_KEY="dailyLifeTicks";
@@ -441,12 +480,15 @@ function resetTicks(id){writeTicks(id,{i:new Set(),s:new Set()});document.queryS
 function methodSteps(text){return String(text||"").split(/\r?\n/).map(l=>l.replace(/^\s*(?:\d+[.)]\s*|[-•*]\s*)/,"").trim()).filter(Boolean)}
 function tickRow(id,kind,idx,text,ticked){return `<button class="tick-row${ticked?" ticked":""}" aria-pressed="${ticked}" onclick="toggleTick('${esc(id)}','${kind}',${idx},this)"><span class="tick-circle"></span><span class="tick-text">${esc(text)}</span></button>`}
 function renderRecipe(r){
-  const ing=Array.isArray(r.ingredients)?r.ingredients:[];
+  const rawIng=Array.isArray(r.ingredients)?r.ingredients:[];
+  const isRecId=x=>typeof x==="string"&&/^rec[A-Za-z0-9]{14}$/.test(x);
+  const ing=rawIng.filter(x=>!isRecId(x));
+  const staleWorker=rawIng.some(isRecId);
   const steps=methodSteps(r.recipeText);
   const t=ticksFor(r.id);
   const reset=`<button class="link" onclick="resetTicks('${esc(r.id)}')">Reset ticks</button>`;
   const source=/^https?:\/\//i.test(r.sourceUrl||"")?`<a class="link source-link" href="${esc(r.sourceUrl)}" target="_blank" rel="noopener noreferrer">${icon("external-link")} View original recipe</a>`:"";
-  return `<div class="shell">${header(r.name,true,"recipes")}<main class="page"><article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px;color:var(--green)">${icon("soup","icon-thin")}</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>${icon("clock")} ${esc(cookTime(r.cookingTime))}</span>`:""}${r.servings?`<span>${icon("users")} ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>${icon("chef-hat")} ${esc(r.difficulty)}</span>`:""}</div>${r.notes?`<p class="desc">${esc(r.notes)}</p>`:""}${source}${ing.length?`<div class="section-row"><h3>Ingredients</h3>${reset}</div>${ing.map((x,i)=>tickRow(r.id,"i",i,typeof x==="string"?x:(x.text||x.name||""),t.i.has(i))).join("")}`:""}${steps.length?`<div class="section-row"><h3>Method</h3>${ing.length?"":reset}</div>${steps.map((x,i)=>tickRow(r.id,"s",i,x,t.s.has(i))).join("")}`:""}${!ing.length&&!steps.length?`<p class="desc">No ingredients or method saved for this recipe yet.</p>`:""}<button class="action-btn m-meal" onclick="openPlanForm({recipeId:'${esc(r.id)}'})">${icon("calendar-plus")} Add to meal plan</button></div></article></main></div>`}
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Meals",page:"meals"},{label:"Recipes",page:"recipes"}])}<article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px;color:var(--green)">${icon("soup","icon-thin")}</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>${icon("clock")} ${esc(cookTime(r.cookingTime))}</span>`:""}${r.servings?`<span>${icon("users")} ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>${icon("chef-hat")} ${esc(r.difficulty)}</span>`:""}</div>${r.notes?`<p class="desc">${esc(r.notes)}</p>`:""}${source}${ing.length?`<div class="section-row"><h3>Ingredients</h3>${reset}</div>${ing.map((x,i)=>tickRow(r.id,"i",i,typeof x==="string"?x:(x.text||x.name||""),t.i.has(i))).join("")}`:""}${steps.length?`<div class="section-row"><h3>Method</h3>${ing.length?"":reset}</div>${steps.map((x,i)=>tickRow(r.id,"s",i,x,t.s.has(i))).join("")}`:""}${staleWorker?`<p class="desc">Ingredient names aren't available yet: the Worker needs updating to the latest version.</p>`:!ing.length&&!steps.length?`<p class="desc">No ingredients or method saved for this recipe yet.</p>`:""}<button class="action-btn m-meal" onclick="openPlanForm({recipeId:'${esc(r.id)}'})">${icon("calendar-plus")} Add to meal plan</button></div></article></main></div>`}
 let todoFilter="All";
 let todoSort="desc";
 
