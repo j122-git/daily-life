@@ -1,3 +1,36 @@
+# Daily Life v0.3.1
+
+_2 October 2026_
+
+## New: Meal plan
+
+- The Meals hub's **Meal plan** card is live and shows how many meals are planned this week.
+- Week view (Monday to Sunday) with Breakfast, Lunch and Dinner slots per day. Today is highlighted; chevrons change week and "This week" jumps back.
+- A slot can hold several meals (e.g. main + side). Tap **+** on a slot to add another.
+- **Add from the planner:** tap a slot's "+", choose a recipe, day, meal and servings.
+- **Add from a recipe:** the recipe screen's "Add to meal plan" button asks for day, meal and servings.
+- **Planned servings** is prefilled from the recipe's default servings and editable (it will drive scaling on the future shopping list).
+- **Edit / move / remove:** tap the "..." on a planned meal to change its recipe, move it to another day or meal, or remove it.
+- **Cooked tick:** tick a meal as cooked (uses the existing `Cooked?` checkbox); cooked meals are struck through.
+- Edits and cooked ticks update instantly and roll back if saving fails; adding and removing wait for confirmation.
+- Home's Today section now lists today's meals in Breakfast, Lunch, Dinner order and understands the existing "Diner" option as Dinner.
+
+## Worker
+
+- New endpoints: `POST /api/meal-plan`, `PATCH /api/meal-plan/:id`, `DELETE /api/meal-plan/:id`. Meal is restricted to Breakfast / Lunch / Dinner, recipe and record IDs are validated, and the meal plan cache is purged on every write.
+- `GET /api/meal-plan` now reads from 14 days ago onwards with pagination (one cached payload, 10 minutes). Earlier weeks are not loaded.
+
+## User action
+
+- In Airtable, Weekly plan > Meal: rename **Diner** to **Dinner** and add a **Breakfast** option. The app only writes these three names, and Airtable may reject new select options if the token cannot edit the base schema, so add them by hand.
+
+## Notes
+
+- No other Airtable schema changes. `icons.js` and `navigation.js` untouched.
+- The January test records in Weekly plan are ignored (older than 14 days).
+- Changes made directly in Airtable can take up to 10 minutes to show in the planner.
+- Files changed: `worker.js`, `app.js`, `styles.css`.
+
 # Daily Life v0.3.0
 
 _2 October 2026_

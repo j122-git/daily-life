@@ -292,13 +292,134 @@ function tokenScreen(){
   </div>`
 }
 
+/* ---- Meal plan (v0.3.1) ---- */
+let currentPage="home";
+let planWeek=null;
+const MEALS=["Breakfast","Lunch","Dinner"];
+function byId(id){return document.getElementById(id)}
+function weekStartOf(d=new Date()){const x=new Date(d.getFullYear(),d.getMonth(),d.getDate());const wd=x.getDay();x.setDate(x.getDate()+(wd===0?-6:1-wd));return iso(x)}
+function isoDate(str){const [y,m,d]=str.split("-").map(Number);return new Date(y,m-1,d)}
+function shiftIso(str,days){const [y,m,d]=str.split("-").map(Number);return iso(new Date(y,m-1,d+days))}
+// Airtable's Meal options may be spelled "Diner"; map loosely onto the three slots.
+function slotOf(m){const v=String(m?.meal||"").toLowerCase();return v.startsWith("break")?"Breakfast":v.startsWith("lunch")?"Lunch":v.startsWith("din")?"Dinner":null}
+function planCountText(){
+  if(!cacheMeta.mealPlan.loaded)return"Plan your week";
+  const start=weekStartOf(),end=shiftIso(start,6);
+  const n=state.mealPlan.filter(m=>m.date>=start&&m.date<=end).length;
+  return n?`${n} planned this week`:"Nothing planned yet";
+}
+function planItem(m){
+  const r=recipeFor(m),name=r?.name||m.recipeName||"Recipe",id=esc(m.id);
+  return `<div class="plan-item${m.cooked?" cooked":""}"><button class="plan-tick${m.cooked?" ticked":""}" aria-label="Mark as cooked" aria-pressed="${!!m.cooked}" onclick="toggleCooked('${id}',this)"><span class="tick-circle"></span></button><div class="plan-main"${r?` onclick="show('recipe','${esc(r.id)}')"`:""}><div class="plan-title">${esc(name)}</div>${m.servings?`<div class="sub">${esc(m.servings)} servings</div>`:""}</div><button class="plan-more" aria-label="Edit meal" onclick="openPlanForm({id:'${id}'})">${icon("ellipsis")}</button></div>`;
+}
+function plan(){
+  if(!planWeek)planWeek=weekStartOf();
+  const days=[...Array(7)].map((_,i)=>shiftIso(planWeek,i));
+  const fmt=d=>isoDate(d).toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+  const current=planWeek===weekStartOf();
+  const body=days.map(day=>{
+    const label=isoDate(day).toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
+    const slots=MEALS.map(slot=>{
+      const items=state.mealPlan.filter(m=>m.date===day&&slotOf(m)===slot);
+      return `<div class="slot"><b class="slot-name">${slot}</b><div class="slot-items">${items.map(planItem).join("")}<button class="slot-add" onclick="openPlanForm({date:'${day}',meal:'${slot}'})" aria-label="Add ${slot}">${icon("plus")}${items.length?"":" Add a meal"}</button></div></div>`;
+    }).join("");
+    return `<div class="plan-day${day===today()?" today":""}"><h3>${label}</h3>${slots}</div>`;
+  }).join("");
+  return `<div class="shell">${header("Meal plan",true,"meals")}<main class="page"><div class="week-nav"><button class="back" onclick="planShift(-7)" aria-label="Previous week">${icon("chevron-left")}</button><div class="week-label">${fmt(days[0])} – ${fmt(days[6])}${current?"":`<button class="link" onclick="planToday()">This week</button>`}</div><button class="back" onclick="planShift(7)" aria-label="Next week">${icon("chevron-right")}</button></div>${body}</main>${nav("meals")}</div>`;
+}
+// Re-render the plan screen in place, keeping the scroll position.
+function rerenderPlan(){
+  if(currentPage!=="plan")return;
+  const y=window.scrollY||0;byId("app").innerHTML=plan();scrollTo(0,y);
+}
+function planShift(days){planWeek=shiftIso(planWeek||weekStartOf(),days);rerenderPlan()}
+function planToday(){planWeek=weekStartOf();rerenderPlan()}
+function planFormHtml(o){
+  const e=o.id?state.mealPlan.find(x=>x.id===o.id):null;
+  const recipesSorted=[...state.recipes].sort((a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
+  const recipeId=e?.recipeId||o.recipeId||recipesSorted[0]?.id||"";
+  const rec=state.recipes.find(r=>r.id===recipeId);
+  const date=e?.date||o.date||today();
+  const meal=e?(slotOf(e)||"Dinner"):(o.meal||"Dinner");
+  const servings=e?(e.servings??rec?.servings??""):(rec?.servings??"");
+  const id=esc(e?.id||"");
+  return `<div class="modal-backdrop sheet-bg" id="plan-form-modal">
+    <div class="modal sheet todo-form" role="dialog" aria-modal="true" aria-labelledby="plan-form-title">
+      <div class="eyebrow">${e?"Edit meal":"Add to meal plan"}</div>
+      <h2 id="plan-form-title">${e?"Edit planned meal":"When will you cook it?"}</h2>
+      <label class="form-label" for="plan-recipe">Recipe</label>
+      <select class="form-input" id="plan-recipe" onchange="planRecipeChanged()">${recipesSorted.map(r=>`<option value="${esc(r.id)}" ${r.id===recipeId?"selected":""}>${esc(r.name)}</option>`).join("")}</select>
+      <label class="form-label" for="plan-date">Day</label>
+      <input class="form-input" id="plan-date" type="date" value="${esc(date)}">
+      <label class="form-label" for="plan-meal">Meal</label>
+      <select class="form-input" id="plan-meal">${MEALS.map(x=>`<option value="${x}" ${x===meal?"selected":""}>${x}</option>`).join("")}</select>
+      <label class="form-label" for="plan-servings">Servings</label>
+      <input class="form-input" id="plan-servings" type="number" min="0.5" step="0.5" inputmode="decimal" value="${esc(servings)}">
+      <div class="form-actions"><button class="secondary-button" onclick="closePlanForm()">Cancel</button><button class="primary-button" onclick="savePlan('${id}')">${e?"Save changes":"Add to plan"}</button></div>
+      ${e?`<button class="danger-button" onclick="removeMeal('${id}')">Remove from plan</button>`:""}
+    </div>
+  </div>`;
+}
+function openPlanForm(o={}){
+  if(!state.recipes.length){toast("No recipes to plan yet");return}
+  closePlanForm();
+  document.body.insertAdjacentHTML("beforeend",planFormHtml(o));
+}
+function closePlanForm(){byId("plan-form-modal")?.remove()}
+function planRecipeChanged(){
+  const rec=state.recipes.find(r=>r.id===byId("plan-recipe")?.value);
+  const input=byId("plan-servings");
+  if(input&&rec&&rec.servings!==null&&rec.servings!==undefined)input.value=rec.servings;
+}
+function planWhen(date,meal){return `${isoDate(date).toLocaleDateString("en-GB",{weekday:"long"})} ${String(meal).toLowerCase()}`}
+async function savePlan(id){
+  const recipeId=byId("plan-recipe")?.value||"";
+  const date=byId("plan-date")?.value||"";
+  const meal=byId("plan-meal")?.value||"Dinner";
+  const raw=byId("plan-servings")?.value??"";
+  if(!recipeId){toast("Choose a recipe");return}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){toast("Choose a day");return}
+  const servings=raw===""?null:Number(raw);
+  if(servings!==null&&!(servings>0)){toast("Servings must be above 0");return}
+  const body={recipeId,date,meal,servings};
+  if(id){
+    const i=state.mealPlan.findIndex(x=>x.id===id);
+    if(i<0){closePlanForm();return}
+    const previous=state.mealPlan[i];
+    state.mealPlan[i]={...previous,recipeId,date,meal,servings};
+    closePlanForm();rerenderPlan();toast("Meal updated");
+    try{await api(`/api/meal-plan/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify(body)});markLoaded("mealPlan")}
+    catch(e){const j=state.mealPlan.findIndex(x=>x.id===id);if(j>=0)state.mealPlan[j]=previous;rerenderPlan();toast("Couldn't save meal: "+e.message)}
+  }else{
+    try{
+      const d=await api("/api/meal-plan",{method:"POST",body:JSON.stringify(body)});
+      if(d?.entry){state.mealPlan.push(d.entry);markLoaded("mealPlan")}else invalidate("mealPlan");
+      closePlanForm();rerenderPlan();toast(`Added to ${planWhen(date,meal)}`);
+    }catch(e){toast("Couldn't save meal: "+e.message)}
+  }
+}
+async function removeMeal(id){
+  if(!confirm("Remove this meal from the plan?"))return;
+  try{
+    await api(`/api/meal-plan/${encodeURIComponent(id)}`,{method:"DELETE"});
+    state.mealPlan=state.mealPlan.filter(x=>x.id!==id);markLoaded("mealPlan");
+    closePlanForm();rerenderPlan();toast("Meal removed");
+  }catch(e){toast("Couldn't remove meal: "+e.message)}
+}
+async function toggleCooked(id,el){
+  const m=state.mealPlan.find(x=>x.id===id);if(!m)return;
+  const apply=on=>{m.cooked=on;el?.classList.toggle("ticked",on);el?.setAttribute("aria-pressed",String(on));el?.closest(".plan-item")?.classList.toggle("cooked",on)};
+  const previous=!!m.cooked;apply(!previous);
+  try{await api(`/api/meal-plan/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({cooked:!previous})});markLoaded("mealPlan")}
+  catch(e){apply(previous);toast("Couldn't update meal: "+e.message)}
+}
 function todayMealsHtml(){
   const order=["breakfast","lunch","dinner"];
-  const rank=m=>{const i=order.indexOf(String(m.meal||"").toLowerCase());return i<0?99:i};
+  const rank=m=>{const i=order.indexOf(String(slotOf(m)||"").toLowerCase());return i<0?99:i};
   const rows=state.mealPlan.filter(m=>m.date===today()).sort((a,b)=>rank(a)-rank(b)).map(m=>{
     const r=recipeFor(m),title=r?.name||m.recipeName;
     if(!title)return"";
-    return `<div class="card row"${r?` onclick="show('recipe','${esc(r.id)}')"`:""}>${r?img(r):""}<div class="grow"><div class="eyebrow">${esc(m.meal||"Meal")}</div><div class="title">${esc(title)}</div></div>${r?`<div class="chev">${icon("chevron-right")}</div>`:""}</div>`;
+    return `<div class="card row"${r?` onclick="show('recipe','${esc(r.id)}')"`:""}>${r?img(r):""}<div class="grow"><div class="eyebrow">${esc(slotOf(m)||m.meal||"Meal")}</div><div class="title">${esc(title)}</div></div>${r?`<div class="chev">${icon("chevron-right")}</div>`:""}</div>`;
   }).join("");
   return rows||`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`;
 }
@@ -306,7 +427,7 @@ function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="D
 function cookTime(v){if(v===null||v===undefined||v==="")return"";return typeof v==="number"?`${v} min`:String(v)}
 function meals(){
   const n=cacheMeta.recipes.loaded?state.recipes.length:0;
-  return `<div class="shell">${header("Meals",true)}<main class="page"><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">${icon("book-open")}</div><div class="module-title">Recipes</div><div class="module-sub">${n?`${n} recipe${n===1?"":"s"}`:"Browse and cook"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="toast('Meal plan coming next')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Meal plan</div><div class="module-sub">Coming next<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("meals")}</div>`;
+  return `<div class="shell">${header("Meals",true)}<main class="page"><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">${icon("book-open")}</div><div class="module-title">Recipes</div><div class="module-sub">${n?`${n} recipe${n===1?"":"s"}`:"Browse and cook"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('plan')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Meal plan</div><div class="module-sub">${esc(planCountText())}<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("meals")}</div>`;
 }
 function recipes(){return `<div class="shell">${header("Recipes",true,"meals")}<main class="page">${state.recipes.map(r=>`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${[r.cuisine,cookTime(r.cookingTime),r.servings?`${r.servings} servings`:""].filter(Boolean).map(esc).join(" · ")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")||'<div class="empty">No recipes found.</div>'}</main>${nav("meals")}</div>`}
 async function recipe(id){const cached=state.recipes.find(x=>x.id===id);if(cached&&(cached.ingredients||cached.recipeText||cached.notes))return renderRecipe(cached);const d=await api(`/api/recipes/${encodeURIComponent(id)}`),r=d.recipe;if(!r)throw Error("Recipe not found");const i=state.recipes.findIndex(x=>x.id===id);if(i>=0)state.recipes[i]={...state.recipes[i],...r};else state.recipes.push(r);return renderRecipe(state.recipes.find(x=>x.id===id)||r)}
@@ -325,7 +446,7 @@ function renderRecipe(r){
   const t=ticksFor(r.id);
   const reset=`<button class="link" onclick="resetTicks('${esc(r.id)}')">Reset ticks</button>`;
   const source=/^https?:\/\//i.test(r.sourceUrl||"")?`<a class="link source-link" href="${esc(r.sourceUrl)}" target="_blank" rel="noopener noreferrer">${icon("external-link")} View original recipe</a>`:"";
-  return `<div class="shell">${header(r.name,true,"recipes")}<main class="page"><article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px;color:var(--green)">${icon("soup","icon-thin")}</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>${icon("clock")} ${esc(cookTime(r.cookingTime))}</span>`:""}${r.servings?`<span>${icon("users")} ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>${icon("chef-hat")} ${esc(r.difficulty)}</span>`:""}</div>${r.notes?`<p class="desc">${esc(r.notes)}</p>`:""}${source}${ing.length?`<div class="section-row"><h3>Ingredients</h3>${reset}</div>${ing.map((x,i)=>tickRow(r.id,"i",i,typeof x==="string"?x:(x.text||x.name||""),t.i.has(i))).join("")}`:""}${steps.length?`<div class="section-row"><h3>Method</h3>${ing.length?"":reset}</div>${steps.map((x,i)=>tickRow(r.id,"s",i,x,t.s.has(i))).join("")}`:""}${!ing.length&&!steps.length?`<p class="desc">No ingredients or method saved for this recipe yet.</p>`:""}<button class="action-btn m-meal" onclick="toast('Meal-plan editing coming next')">${icon("calendar-plus")} Add to meal plan</button></div></article></main></div>`}
+  return `<div class="shell">${header(r.name,true,"recipes")}<main class="page"><article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px;color:var(--green)">${icon("soup","icon-thin")}</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>${icon("clock")} ${esc(cookTime(r.cookingTime))}</span>`:""}${r.servings?`<span>${icon("users")} ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>${icon("chef-hat")} ${esc(r.difficulty)}</span>`:""}</div>${r.notes?`<p class="desc">${esc(r.notes)}</p>`:""}${source}${ing.length?`<div class="section-row"><h3>Ingredients</h3>${reset}</div>${ing.map((x,i)=>tickRow(r.id,"i",i,typeof x==="string"?x:(x.text||x.name||""),t.i.has(i))).join("")}`:""}${steps.length?`<div class="section-row"><h3>Method</h3>${ing.length?"":reset}</div>${steps.map((x,i)=>tickRow(r.id,"s",i,x,t.s.has(i))).join("")}`:""}${!ing.length&&!steps.length?`<p class="desc">No ingredients or method saved for this recipe yet.</p>`:""}<button class="action-btn m-meal" onclick="openPlanForm({recipeId:'${esc(r.id)}'})">${icon("calendar-plus")} Add to meal plan</button></div></article></main></div>`}
 let todoFilter="All";
 let todoSort="desc";
 
@@ -427,20 +548,22 @@ function events(){
 function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
 function errorScreen(e){return `<div class="shell">${header()}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
 async function show(page,id){
-  scrollTo(0,0);const app=document.getElementById("app");
+  scrollTo(0,0);currentPage=page;const app=document.getElementById("app");
   try{
     if(page==="token"){app.innerHTML=tokenScreen();return}
     if(!hasAppToken()){app.innerHTML=tokenScreen();return}
     if(page==="home"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await all()}
+    else if(page==="plan"&&!(cacheMeta.mealPlan.loaded&&cacheMeta.recipes.loaded)){app.innerHTML='<div class="shell loading">Loading…</div>';await Promise.all([load("recipes"),load("mealPlan")])}
     else if(page==="recipes"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("recipes")}
     else if(page==="todo"&&!cacheMeta.todos.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("todos")}
     else if(page==="events"&&!cacheMeta.events.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("events")}
-    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else h=todo();
+    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else if(page==="plan")h=plan();else h=todo();
     app.innerHTML=h;
     if(page==="home")refreshDataInBackground(["recipes","todos","mealPlan","events"]);
     if(page==="meals"||page==="recipes"||page==="recipe")refreshDataInBackground(["recipes"]);
     if(page==="todo"){refreshDataInBackground(["todos"]);if(!cacheMeta["todo-options"].loaded)load("todo-options",{background:true})}
     if(page==="events")refreshDataInBackground(["events"]);
+    if(page==="plan")refreshDataInBackground(["mealPlan","recipes"]);
   }catch(e){console.error(e);app.innerHTML=errorScreen(e)}
 }
 if(!window.location.hash)show("home");
