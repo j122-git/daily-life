@@ -1,3 +1,25 @@
+# Daily Life v0.3.3
+
+_13 October 2026_
+
+## Changed: consistent Meals screens
+
+- Meals, Recipes, Meal plan and the recipe screen now use the same header as Lists and Events: "Daily Life" top-left, connection key top-right, section title underneath. The back arrow is gone from these screens.
+- Small breadcrumb above the title: "Meals / Recipes" on Recipes and the recipe screen, "Meals / Meal plan" on the planner. Tapping a parent crumb goes there. The Meals hub has no breadcrumb. Android's back button still works as before.
+
+## New: recipe search and filters
+
+- Search box on Recipes covering recipe name, cuisine and ingredient names. Multiple words must all match; the list updates as you type without losing keyboard focus, and there is a clear button.
+- Filter pills: **All**, **Quick** (cooking time 30 minutes or less) and one pill per cuisine found in your recipes. The row scrolls sideways. Search and pills combine.
+- The search and selected pill are kept while you open a recipe and come back, and reset when the app reloads.
+
+## Notes
+
+- **Quick** only includes recipes with a `Cooking time (mins)` value, so it stays sparse until older recipes are filled in.
+- No Worker or Airtable changes (`worker.js` unchanged from v0.3.2). Builds on v0.3.2, so the ingredient ID fix is kept.
+- Files changed: `app.js`, `styles.css`, `icons.js` (new search icon).
+- Next: API usage counter (v0.3.4), then import from URL (v0.3.5).
+
 # Daily Life v0.3.2
 
 _13 October 2026_
