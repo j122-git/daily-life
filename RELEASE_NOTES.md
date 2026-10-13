@@ -1,3 +1,19 @@
+# Daily Life v0.3.2
+
+_13 October 2026_
+
+## Bug fix: ingredients showing as IDs
+
+- Recipe ingredients appeared as Airtable record IDs (e.g. `recbNu3TUFVlesp8H`) instead of names.
+- Cause: the screen was receiving the older Worker response, which sent raw linked IDs. The recipes cache key is now versioned (`recipes-v2`) so an older cached response can never be served, and the app no longer displays a record ID if it ever receives one (it shows a "Worker needs updating" hint instead).
+- Recipes whose ingredients are only linked on the Recipes table (no Ingredients Quantities rows yet) now show those ingredient **names** (without quantities). Where a recipe has some quantity rows, the remaining linked ingredients are appended as names.
+
+## Notes
+
+- No Airtable schema changes. `navigation.js`, `icons.js` and `styles.css` untouched.
+- Deploy `worker.js` first, then `app.js`.
+- Files changed: `worker.js`, `app.js`.
+
 # Daily Life v0.3.1
 
 _2 October 2026_
