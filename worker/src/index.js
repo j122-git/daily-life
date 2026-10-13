@@ -449,7 +449,8 @@ export default {
    read page by page.
    ========================================================= */
 
-const RECIPES_CACHE_KEY = "https://daily-life-cache.internal/recipes";
+// "-v2": the payload shape changed in v0.3.0, so never serve an older cached shape.
+const RECIPES_CACHE_KEY = "https://daily-life-cache.internal/recipes-v2";
 
 async function fetchAllRecords(tableId, env, extraParams = {}) {
 
@@ -551,7 +552,14 @@ async function getRecipes(
 
       const recipes =
         recipeResult.records.map(record =>
-          normaliseRecipe(record, linesByRecipe.get(record.id) || [])
+          normaliseRecipe(
+            record,
+            mergeIngredientLines(
+              linesByRecipe.get(record.id) || [],
+              (record.fields || {})["Ingredients"] || [],
+              ingredientNames
+            )
+          )
         );
 
       return { data: { recipes } };
@@ -598,6 +606,47 @@ async function getRecipe(
   return json({
     recipe
   }, 200, corsHeaders);
+
+}
+
+
+/* =========================================================
+   MERGE INGREDIENT LINES
+   =========================================================
+   Quantity rows come first. Any ingredient linked to the recipe
+   (Recipes > Ingredients) that has no quantity row yet is added
+   as a name-only line, so older recipes still show ingredient
+   names (without quantities) rather than nothing.
+   ========================================================= */
+
+function mergeIngredientLines(lines, linkedIds, ingredientNames) {
+
+  const covered = new Set(lines.map(line => line.ingredientId).filter(Boolean));
+
+  const extras = [];
+
+  for (const id of linkedIds) {
+
+    const name = ingredientNames.get(id);
+
+    if (!name || covered.has(id)) continue;
+
+    covered.add(id);
+
+    extras.push({
+      id,
+      ingredientId: id,
+      name,
+      quantity: null,
+      unit: null,
+      preparation: null,
+      optional: false,
+      text: name
+    });
+
+  }
+
+  return [...lines, ...extras];
 
 }
 
@@ -678,6 +727,7 @@ function normaliseIngredientLine(record, ingredientNames) {
 
   return {
     id: record.id,
+    ingredientId,
     name,
     quantity: quantity ?? null,
     unit: unit || null,
