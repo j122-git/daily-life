@@ -1,3 +1,34 @@
+# Daily Life v0.3.4
+
+_14 October 2026_
+
+## New: Settings hub
+
+- The key icon is now a **cog**, shown on the Home header only. Other screens no longer carry an icon in the header. The **More** tab in the bottom nav opens Settings too. If the app can't connect, the error screen keeps the cog.
+- **Settings** is a small hub with three tiles:
+  - **Authentication:** the former Connection screen (app token), renamed, with a "Settings / Authentication" breadcrumb.
+  - **API usage:** estimated Airtable calls used this month, with a progress bar (green, amber from 70%, red from 90%) and the reset date.
+  - **Release notes:** read live from `RELEASE_NOTES.md`, with the latest version open and older versions collapsed.
+
+## New: API usage counter
+
+- The Worker counts every Airtable call it makes in Cloudflare KV, one counter per calendar month (resets on the 1st). Cached responses cost nothing and are not counted.
+- New endpoint `GET /api/usage`. It uses no Airtable calls.
+- It is an estimate: Airtable has no usage API, and calls landing in different Worker instances at the same instant can occasionally be missed. Airtable's Usage tab stays the source of truth.
+
+## User action
+
+- In Cloudflare, create a KV namespace and bind it to the Worker with the variable name `USAGE`.
+- Add a Worker variable `AIRTABLE_USAGE_SEED` with this month's current figure from Airtable's Usage tab (applied once, the first time the counter runs).
+- Optional: `AIRTABLE_MONTHLY_LIMIT` (defaults to 1000).
+- Until `USAGE` is bound, the API usage screen shows these setup steps.
+- Make sure `RELEASE_NOTES.md` is published alongside the app so Release notes can load it.
+
+## Notes
+
+- No Airtable schema changes. `navigation.js` untouched.
+- Files changed: `worker.js`, `app.js`, `styles.css`, `icons.js` (cog, gauge and document icons).
+
 # Daily Life v0.3.3
 
 _13 October 2026_

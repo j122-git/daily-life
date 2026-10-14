@@ -408,3 +408,22 @@ button{font:inherit;border:0;cursor:pointer}.icon{width:1em;height:1em;flex:none
 .search-clear[hidden]{display:none}
 .filterbar.scroll{scrollbar-width:none;margin:10px 0 14px}
 .filterbar.scroll::-webkit-scrollbar{display:none}
+
+/* Settings v0.3.4 */
+.usage-card{padding:18px}
+.usage-figure b{font-family:Nunito;font-size:34px;letter-spacing:-1px}
+.usage-figure span{font-size:14px;color:var(--muted);margin-left:5px}
+.usage-bar{height:10px;border-radius:999px;background:var(--line);overflow:hidden;margin:12px 0 10px}
+.usage-bar span{display:block;height:100%;border-radius:999px;background:var(--green)}
+.usage-bar.mid span{background:var(--sun)}
+.usage-bar.high span{background:var(--red)}
+.setup-steps{margin:6px 0 0;padding-left:18px;font-size:13px;line-height:1.55;color:#3d5565}
+.setup-steps code,.notes-version code{font-size:.9em;background:var(--bg);padding:1px 4px;border-radius:5px}
+.notes-version{background:var(--paper);border:1px solid #eee9df;border-radius:16px;box-shadow:var(--shadow);padding:14px 16px;margin-bottom:10px}
+.notes-version h2{font-family:Nunito;font-size:18px;margin:0 0 4px}
+.notes-date{font-family:"DM Sans",sans-serif;font-size:12px;font-weight:500;color:var(--muted);margin-left:6px}
+.notes-version h3{font-size:13px;margin:14px 0 4px}
+.notes-version ul{margin:4px 0;padding-left:18px;font-size:13px;line-height:1.5;color:#3d5565}
+.notes-version p{font-size:13px;line-height:1.5;margin:4px 0;color:#3d5565}
+details.notes-version summary{cursor:pointer;font-weight:700;font-size:14px}
+details.notes-version[open] summary{margin-bottom:6px}

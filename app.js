@@ -71,8 +71,8 @@ function overdueLabel(due){
   return `${n} day${n===1?"":"s"} overdue`;
 }
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:26px;color:var(--green)">${icon("soup")}</div>`}
-function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">${icon("house")}</span>Home</button><button class="nav ${a==="meals"?"active":""}" onclick="show('meals')"><span class="ni">${icon("utensils")}</span>Meals</button><button class="nav ${a==="todo"?"active":""}" onclick="show('todo')"><span class="ni">${icon("list-checks")}</span>Lists</button><button class="nav ${a==="events"?"active":""}" onclick="show('events')"><span class="ni">${icon("calendar-days")}</span>Events</button><button class="nav" onclick="toast('More coming soon')"><span class="ni">${icon("ellipsis")}</span>More</button></nav>`}
-function header(title="",back=false,backTo="home"){return `<header class="header">${back?`<button class="back" onclick="show('${backTo}')" aria-label="Back">${icon("chevron-left")}</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1><button class="avatar" onclick="show('token')" aria-label="Connection settings" title="Connection settings">${icon("key-round")}</button></header>`}
+function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">${icon("house")}</span>Home</button><button class="nav ${a==="meals"?"active":""}" onclick="show('meals')"><span class="ni">${icon("utensils")}</span>Meals</button><button class="nav ${a==="todo"?"active":""}" onclick="show('todo')"><span class="ni">${icon("list-checks")}</span>Lists</button><button class="nav ${a==="events"?"active":""}" onclick="show('events')"><span class="ni">${icon("calendar-days")}</span>Events</button><button class="nav ${a==="settings"?"active":""}" onclick="show('settings')"><span class="ni">${icon("ellipsis")}</span>More</button></nav>`}
+function header(title="",back=false,backTo="home",cog=false){return `<header class="header">${back?`<button class="back" onclick="show('${backTo}')" aria-label="Back">${icon("chevron-left")}</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1>${cog?`<button class="avatar" onclick="show('settings')" aria-label="Settings" title="Settings">${icon("settings")}</button>`:""}</header>`}
 async function load(kind,{force=false,background=false}={}){
   const meta=cacheMeta[kind];
   if(!force&&meta.loaded){if(!isFresh(kind)&&!meta.promise)meta.promise=load(kind,{force:true,background:true}).finally(()=>meta.promise=null);return state}
@@ -215,13 +215,11 @@ async function saveAndConnect(){
 
 function tokenScreen(){
   return `<div class="shell">
-    <header class="header">
-      <button class="back" onclick="${hasAppToken()?"show('home')":"toast('Enter your token to connect')"}" aria-label="Back">${icon("chevron-left")}</button>
-      <h1 class="screen-title">Connection</h1>
-      <div style="width:38px"></div>
-    </header>
+    <header class="header"><div class="logo">Daily Life</div></header>
 
     <main class="page token-page">
+      ${hasAppToken()?crumbs([{label:"Settings",page:"settings"},{label:"Authentication"}]):""}
+      <h1 class="screen-title page-title">Authentication</h1>
 
       <div class="token-illustration" aria-hidden="true">
         <span class="token-shape mint"></span>
@@ -232,7 +230,7 @@ function tokenScreen(){
 
       <div class="eyebrow">Daily Life</div>
 
-      <h1 class="token-title">Enter your app token</h1>
+      <h2 class="token-title">Enter your app token</h2>
 
       <p class="token-intro">
         Your token connects Daily Life to your family data through your Cloudflare Worker.
@@ -423,11 +421,86 @@ function todayMealsHtml(){
   }).join("");
   return rows||`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`;
 }
-function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3),ec=eventsUpcoming(7).length,period=dayPeriod();return `<div class="shell">${header()}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('todo')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">To do</div><div class="module-sub">${state.todos.filter(t=>t.status!=="Done").length} tasks<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('events')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Events</div><div class="module-sub">${ec} this week<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="toast('Family coming next')"><div class="ico">${icon("users")}</div><div class="module-title">Family</div><div class="module-sub">Coming soon<span class="chev">${icon("chevron-right")}</span></div></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
+function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3),ec=eventsUpcoming(7).length,period=dayPeriod();return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('todo')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">To do</div><div class="module-sub">${state.todos.filter(t=>t.status!=="Done").length} tasks<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('events')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Events</div><div class="module-sub">${ec} this week<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="toast('Family coming next')"><div class="ico">${icon("users")}</div><div class="module-title">Family</div><div class="module-sub">Coming soon<span class="chev">${icon("chevron-right")}</span></div></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
 function cookTime(v){if(v===null||v===undefined||v==="")return"";return typeof v==="number"?`${v} min`:String(v)}
 function meals(){
   const n=cacheMeta.recipes.loaded?state.recipes.length:0;
   return `<div class="shell">${header()}<main class="page"><h1 class="screen-title page-title">Meals</h1><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">${icon("book-open")}</div><div class="module-title">Recipes</div><div class="module-sub">${n?`${n} recipe${n===1?"":"s"}`:"Browse and cook"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('plan')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Meal plan</div><div class="module-sub">${esc(planCountText())}<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("meals")}</div>`;
+}
+/* ---- Settings (v0.3.4) ---- */
+let apiUsage=null,releaseNotes=null;
+function settings(){
+  const usageSub=apiUsage?.available?`${apiUsage.used.toLocaleString("en-GB")} / ${apiUsage.limit.toLocaleString("en-GB")} calls`:"Monthly Airtable calls";
+  const notesSub=releaseNotes?.[0]?.version||"What's new";
+  const tile=(cls,page,ico,title,sub)=>`<button class="module ${cls}" onclick="show('${page}')"><div class="ico">${icon(ico)}</div><div class="module-title">${title}</div><div class="module-sub">${esc(sub)}<span class="chev">${icon("chevron-right")}</span></div></button>`;
+  return `<div class="shell">${header()}<main class="page"><h1 class="screen-title page-title">Settings</h1><div class="modules">${tile("m-meal","token","key-round","Authentication",hasAppToken()?"Token saved":"Not connected")}${tile("m-events","usage","gauge","API usage",usageSub)}${tile("m-todo","release-notes","file-text","Release notes",notesSub)}</div></main>${nav("settings")}</div>`;
+}
+function usageScreen(){
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Settings",page:"settings"},{label:"API usage"}])}<h1 class="screen-title page-title">API usage</h1><div id="usage-body"><div class="card usage-card"><div class="sub">Loading…</div></div></div></main>${nav("settings")}</div>`;
+}
+function usageBody(d){
+  if(!d?.available){
+    return `<div class="card usage-card"><div class="title">Usage counter not set up</div><p class="sub">To count Airtable calls, add these in Cloudflare:</p><ol class="setup-steps"><li>Create a KV namespace and bind it to the Worker as <code>USAGE</code>.</li><li>Add a variable <code>AIRTABLE_USAGE_SEED</code> with this month's figure from Airtable's Usage tab (optional, applied once).</li></ol></div>`;
+  }
+  const pct=Math.min(100,d.percent),tone=pct>=90?"high":pct>=70?"mid":"low";
+  const month=isoDate(`${d.month}-01`).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+  const resets=isoDate(d.resetsOn).toLocaleDateString("en-GB",{day:"numeric",month:"long"});
+  return `<div class="card usage-card"><div class="eyebrow">${esc(month)}</div><div class="usage-figure"><b>${d.used.toLocaleString("en-GB")}</b><span>/ ${d.limit.toLocaleString("en-GB")} calls</span></div><div class="usage-bar ${tone}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div><div class="sub">${d.percent}% used · resets ${esc(resets)}</div></div><p class="token-footnote">An estimate counted by your Worker. Cached responses cost nothing and are not counted. Airtable's own Usage tab is the source of truth.</p>`;
+}
+async function loadUsage(){
+  try{
+    const d=await api("/api/usage");apiUsage=d;
+    const body=byId("usage-body");if(body)body.innerHTML=usageBody(d);
+  }catch(e){
+    const body=byId("usage-body");
+    const old=/not found|404/i.test(e?.message||"");
+    if(body)body.innerHTML=`<div class="card usage-card"><div class="title">Couldn't load usage</div><p class="sub">${old?"Update your Worker to v0.3.4 or later to see usage.":esc(e?.message||"Unknown error")}</p></div>`;
+  }
+}
+function mdInline(t){return esc(t).replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")}
+function mdBlock(lines){
+  let html="",list=[];
+  const flush=()=>{if(list.length){html+=`<ul>${list.map(x=>`<li>${mdInline(x)}</li>`).join("")}</ul>`;list=[]}};
+  for(const raw of lines){
+    const line=raw.trimEnd();
+    if(!line.trim()||/^-{3,}$/.test(line.trim())){flush();continue}
+    if(/^##\s+/.test(line)){flush();html+=`<h3>${mdInline(line.replace(/^##\s+/,""))}</h3>`}
+    else if(/^\s*-\s+/.test(line))list.push(line.replace(/^\s*-\s+/,""));
+    else{flush();html+=`<p>${mdInline(line.trim())}</p>`}
+  }
+  flush();return html;
+}
+function parseReleaseNotes(text){
+  const parts=String(text||"").replace(/\r/g,"").split(/^# Daily Life (v[\d.]+)[ \t]*$/m);
+  const out=[];
+  for(let i=1;i<parts.length;i+=2){
+    const lines=parts[i+1].split("\n");
+    let date="";
+    const k=lines.findIndex(l=>l.trim());
+    if(k>=0&&/^_.+_$/.test(lines[k].trim())){date=lines[k].trim().slice(1,-1);lines.splice(k,1)}
+    out.push({version:parts[i],date,html:mdBlock(lines)});
+  }
+  return out;
+}
+function releaseNotesBody(list){
+  if(!list.length)return`<div class="empty">No release notes found.</div>`;
+  return list.map((v,i)=>i===0
+    ?`<section class="notes-version"><h2>${esc(v.version)}${v.date?` <span class="notes-date">${esc(v.date)}</span>`:""}</h2>${v.html}</section>`
+    :`<details class="notes-version"><summary>${esc(v.version)}${v.date?` · ${esc(v.date)}`:""}</summary>${v.html}</details>`).join("");
+}
+function releaseNotesScreen(){
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Settings",page:"settings"},{label:"Release notes"}])}<h1 class="screen-title page-title">Release notes</h1><div id="notes-body">${releaseNotes?releaseNotesBody(releaseNotes):'<div class="empty">Loading…</div>'}</div></main>${nav("settings")}</div>`;
+}
+async function loadReleaseNotes(){
+  try{
+    const r=await fetch("RELEASE_NOTES.md",{cache:"no-cache"});
+    if(!r.ok)throw Error(`HTTP ${r.status}`);
+    releaseNotes=parseReleaseNotes(await r.text());
+    const body=byId("notes-body");if(body)body.innerHTML=releaseNotesBody(releaseNotes);
+  }catch(e){
+    const body=byId("notes-body");
+    if(body&&!releaseNotes)body.innerHTML=`<div class="empty">Couldn't load release notes. Make sure RELEASE_NOTES.md is published with the app.</div>`;
+  }
 }
 /* ---- Recipes list: search + filter pills (v0.3.3) ---- */
 let recipeQuery="",recipeFilter="All";
@@ -588,7 +661,7 @@ function events(){
   return `<div class="shell">${header("Events",false)}<main class="page"><div style="display:flex;justify-content:space-between;align-items:center"><h1 class="screen-title">Events</h1><a class="plus" href="https://calendar.google.com/calendar/u/0/r/eventedit" target="_blank" rel="noopener" aria-label="Add event">${icon("plus")}</a></div>${body}</main>${nav("events")}</div>`;
 }
 function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
-function errorScreen(e){return `<div class="shell">${header()}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
+function errorScreen(e){return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
 async function show(page,id){
   scrollTo(0,0);currentPage=page;const app=document.getElementById("app");
   try{
@@ -599,8 +672,11 @@ async function show(page,id){
     else if(page==="recipes"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("recipes")}
     else if(page==="todo"&&!cacheMeta.todos.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("todos")}
     else if(page==="events"&&!cacheMeta.events.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("events")}
-    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else if(page==="plan")h=plan();else h=todo();
+    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else if(page==="plan")h=plan();else if(page==="settings")h=settings();else if(page==="usage")h=usageScreen();else if(page==="release-notes")h=releaseNotesScreen();else h=todo();
     app.innerHTML=h;
+    if(page==="usage")loadUsage();
+    if(page==="release-notes"||page==="settings"&&!releaseNotes)loadReleaseNotes();
+    if(page==="settings"&&!apiUsage)loadUsage();
     if(page==="home")refreshDataInBackground(["recipes","todos","mealPlan","events"]);
     if(page==="meals"||page==="recipes"||page==="recipe")refreshDataInBackground(["recipes"]);
     if(page==="todo"){refreshDataInBackground(["todos"]);if(!cacheMeta["todo-options"].loaded)load("todo-options",{background:true})}
