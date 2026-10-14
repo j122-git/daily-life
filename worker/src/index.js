@@ -14,6 +14,12 @@
  * Environment variables / Secrets:
  * AIRTABLE_TOKEN
  * APP_TOKEN
+ * USAGE (KV namespace binding) — counts Airtable API calls for the
+ *                       Settings > API usage screen.
+ * AIRTABLE_USAGE_SEED  — optional number: the current month's figure
+ *                       from Airtable's Usage tab. Applied once, the
+ *                       first time the counter runs.
+ * AIRTABLE_MONTHLY_LIMIT — optional number, default 1000.
  * CALENDAR_ICS_URL   — the family calendar's "Secret address in iCal
  *                       format" from Google Calendar settings. Events
  *                       are read directly from Google — nothing is
@@ -399,6 +405,23 @@ export default {
 
 
     /* =====================================================
+       API USAGE
+       ===================================================== */
+
+    /*
+     * GET /api/usage
+     */
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/usage"
+    ) {
+
+      return await getUsage(env, corsHeaders);
+
+    }
+
+
+    /* =====================================================
        EVENTS (Google Calendar — read-only, via private ICS feed)
        ===================================================== */
 
@@ -472,7 +495,7 @@ async function fetchAllRecords(tableId, env, extraParams = {}) {
       params.set("offset", offset);
     }
 
-    const response = await fetch(
+    const response = await airtableFetch(env, 
       `https://api.airtable.com/v0/${BASE_ID}/${tableId}?${params}`,
       {
         headers: {
@@ -1028,7 +1051,7 @@ async function createMealPlanEntry(
 
   }
 
-  const response = await fetch(
+  const response = await airtableFetch(env, 
     `https://api.airtable.com/v0/${BASE_ID}/${MEAL_PLAN_TABLE_ID}`,
     {
       method: "POST",
@@ -1109,7 +1132,7 @@ async function updateMealPlanEntry(
 
   }
 
-  const response = await fetch(
+  const response = await airtableFetch(env, 
     `https://api.airtable.com/v0/${BASE_ID}/${MEAL_PLAN_TABLE_ID}/${recordId}`,
     {
       method: "PATCH",
@@ -1157,7 +1180,7 @@ async function deleteMealPlanEntry(
   corsHeaders
 ) {
 
-  const response = await fetch(
+  const response = await airtableFetch(env, 
     `https://api.airtable.com/v0/${BASE_ID}/${MEAL_PLAN_TABLE_ID}/${recordId}`,
     {
       method: "DELETE",
@@ -1267,7 +1290,7 @@ async function getTodos(
         `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}?${params}`;
 
 
-      const response = await fetch(
+      const response = await airtableFetch(env, 
         airtableUrl,
         {
           headers: {
@@ -1313,7 +1336,7 @@ async function getTodoOptions(env, corsHeaders) {
     async () => {
 
       const url = `https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`;
-      const response = await fetch(url, {
+      const response = await airtableFetch(env, url, {
         headers: { "Authorization": `Bearer ${env.AIRTABLE_TOKEN}` }
       });
       const data = await response.json();
@@ -1538,7 +1561,7 @@ async function createTodo(
   }
 
 
-  const response = await fetch(
+  const response = await airtableFetch(env, 
     `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}`,
     {
       method: "POST",
@@ -1686,7 +1709,7 @@ async function updateTodo(
   }
 
 
-  const response = await fetch(
+  const response = await airtableFetch(env, 
     `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}/${recordId}`,
     {
       method: "PATCH",
@@ -1752,7 +1775,7 @@ async function deleteTodo(
   corsHeaders
 ) {
 
-  const response = await fetch(
+  const response = await airtableFetch(env, 
     `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}/${recordId}`,
     {
       method: "DELETE",
@@ -2395,5 +2418,115 @@ function secureCompare(a, b) {
 
 
   return result === 0;
+
+}
+
+
+/* =========================================================
+   API USAGE COUNTER
+   =========================================================
+   Airtable exposes no usage API, so the Worker counts its own
+   Airtable calls in Workers KV (binding: USAGE), one counter per
+   calendar month (UTC). It is an estimate: cache hits cost
+   nothing and are not counted, and two calls landing in
+   different Worker instances at the same instant can be missed.
+
+   AIRTABLE_USAGE_SEED (optional) is applied once, to the first
+   month the counter runs, to match Airtable's own Usage tab.
+   ========================================================= */
+
+const USAGE_DEFAULT_LIMIT = 1000;
+
+function usageMonthKey(date = new Date()) {
+  return `usage:${date.toISOString().slice(0, 7)}`;
+}
+
+// Serialises counting inside one Worker instance so the parallel
+// Airtable reads in one request don't overwrite each other.
+let usageChain = Promise.resolve();
+
+function countAirtableCall(env) {
+
+  if (!env.USAGE) return Promise.resolve();
+
+  usageChain = usageChain
+    .then(async () => {
+
+      const key = usageMonthKey();
+      let current = parseInt(await env.USAGE.get(key), 10);
+
+      if (!Number.isFinite(current)) {
+
+        current = 0;
+
+        if ((await env.USAGE.get("usage:seeded")) === null) {
+
+          current = Math.max(0, parseInt(env.AIRTABLE_USAGE_SEED, 10) || 0);
+
+          await env.USAGE.put("usage:seeded", new Date().toISOString());
+
+        }
+
+      }
+
+      await env.USAGE.put(key, String(current + 1));
+
+    })
+    .catch(error => console.warn("Usage counter failed:", String(error)));
+
+  return usageChain;
+
+}
+
+async function airtableFetch(env, url, options) {
+
+  await countAirtableCall(env);
+
+  return fetch(url, options);
+
+}
+
+async function getUsage(env, corsHeaders) {
+
+  const headers = { ...corsHeaders, "Cache-Control": "no-store" };
+
+  if (!env.USAGE) {
+
+    return json({
+      available: false,
+      reason: "The USAGE KV namespace is not bound to this Worker"
+    }, 200, headers);
+
+  }
+
+  const now = new Date();
+
+  const seeded = (await env.USAGE.get("usage:seeded")) !== null;
+
+  let used = parseInt(await env.USAGE.get(usageMonthKey(now)), 10);
+
+  if (!Number.isFinite(used)) {
+
+    used = seeded
+      ? 0
+      : Math.max(0, parseInt(env.AIRTABLE_USAGE_SEED, 10) || 0);
+
+  }
+
+  const limit =
+    parseInt(env.AIRTABLE_MONTHLY_LIMIT, 10) || USAGE_DEFAULT_LIMIT;
+
+  const nextMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
+  );
+
+  return json({
+    available: true,
+    used,
+    limit,
+    percent: Math.round((used / limit) * 100),
+    month: now.toISOString().slice(0, 7),
+    resetsOn: nextMonth.toISOString().slice(0, 10)
+  }, 200, headers);
 
 }
