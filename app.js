@@ -502,6 +502,118 @@ async function loadReleaseNotes(){
     if(body&&!releaseNotes)body.innerHTML=`<div class="empty">Couldn't load release notes. Make sure RELEASE_NOTES.md is published with the app.</div>`;
   }
 }
+/* ---- Recipe import from a link (v0.3.5) ---- */
+let importDraft=null;
+function normUrl(u){
+  try{
+    const x=new URL(u);x.hash="";
+    for(const k of [...x.searchParams.keys()])if(/^utm_|^fbclid$|^gclid$/i.test(k))x.searchParams.delete(k);
+    return (x.hostname.replace(/^www\./,"")+x.pathname.replace(/\/+$/,"")+x.search).toLowerCase();
+  }catch{return String(u||"").trim().toLowerCase()}
+}
+function openImport(){closeImport();document.body.insertAdjacentHTML("beforeend",`<div class="modal-backdrop sheet-bg" id="import-modal"><div class="modal sheet todo-form" id="import-sheet" role="dialog" aria-modal="true" aria-labelledby="import-title">${importUrlStage()}</div></div>`);setTimeout(()=>byId("import-url")?.focus(),0)}
+function closeImport(){byId("import-modal")?.remove();importDraft=null}
+function setImportSheet(html){const el=byId("import-sheet");if(el)el.innerHTML=html}
+function importUrlStage(message="",dup=null,url=""){
+  return `<div class="eyebrow">Add recipe</div><h2 id="import-title">Paste a recipe link</h2>
+  <label class="form-label" for="import-url">Link</label>
+  <input class="form-input" id="import-url" type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https://…" value="${esc(url)}" onkeydown="if(event.key==='Enter')importFetch()">
+  ${message?`<p class="form-error" role="alert">${esc(message)}</p>`:""}
+  ${dup?`<div class="form-warning">Already in your recipes: <b>${esc(dup.name)}</b><div class="form-actions"><button class="secondary-button" onclick="closeImport();show('recipe','${esc(dup.id)}')">Open it</button><button class="primary-button" onclick="importFetch(true)">Import anyway</button></div></div>`:""}
+  <div class="form-actions"><button class="secondary-button" onclick="closeImport()">Cancel</button><button class="primary-button" id="import-fetch" onclick="importFetch()">Fetch recipe</button></div>`;
+}
+async function importFetch(force=false){
+  const url=(byId("import-url")?.value||"").trim();
+  if(!url){setImportSheet(importUrlStage("Paste a link first"));return}
+  if(!force){
+    const key=normUrl(url),dup=state.recipes.find(r=>r.sourceUrl&&normUrl(r.sourceUrl)===key);
+    if(dup){setImportSheet(importUrlStage("",dup,url));return}
+  }
+  const button=byId("import-fetch");
+  if(button){button.disabled=true;button.textContent="Fetching…"}
+  try{
+    const d=await api("/api/import/preview",{method:"POST",body:JSON.stringify({url})});
+    importDraft=makeImportDraft(d.recipe);
+    setImportSheet(importPreviewStage());
+  }catch(e){setImportSheet(importUrlStage(e.message||"Couldn't read that link",null,url))}
+}
+function makeImportDraft(r){
+  return {
+    title:r.title||"",sourceUrl:r.sourceUrl||"",image:r.image||"",
+    servings:r.servings??"",cookingTime:r.cookingTime??"",
+    cuisine:importCuisineMatch(r.cuisine),
+    steps:(r.steps||[]).join("\n"),
+    ingredients:(r.ingredients||[]).map(i=>({quantity:i.quantity===null||i.quantity===undefined?"":String(Math.round(i.quantity*100)/100),unit:i.unit||"",name:i.name||"",preparation:i.preparation||"",optional:!!i.optional,isNew:!!i.isNew}))
+  };
+}
+function importCuisines(){return [...new Set(state.recipes.map(r=>r.cuisine).filter(c=>typeof c==="string"&&c.trim()))].sort((a,b)=>a.localeCompare(b))}
+function importCuisineMatch(c){if(!c)return"";return importCuisines().find(x=>x.toLowerCase()===String(c).toLowerCase())||""}
+function importIngredientsHtml(){
+  const rows=importDraft.ingredients.map((x,i)=>`<div class="imp-ing"><div class="imp-row"><input class="form-input imp-qty" inputmode="decimal" placeholder="Qty" aria-label="Quantity" value="${esc(x.quantity)}" oninput="importIng(${i},'quantity',this.value)"><input class="form-input imp-unit" placeholder="Unit" aria-label="Unit" value="${esc(x.unit)}" oninput="importIng(${i},'unit',this.value)"><input class="form-input imp-name" placeholder="Ingredient" aria-label="Ingredient" value="${esc(x.name)}" oninput="importIng(${i},'name',this.value)"><button class="imp-del" aria-label="Remove ingredient" onclick="importRemoveIng(${i})">${icon("x")}</button></div><div class="imp-meta"><input class="form-input imp-prep" placeholder="Preparation (optional)" aria-label="Preparation" value="${esc(x.preparation)}" oninput="importIng(${i},'preparation',this.value)">${x.isNew?'<span class="badge-new">New</span>':""}</div></div>`).join("");
+  return rows||'<div class="sub" style="padding:8px 0">No ingredients. Add at least one.</div>';
+}
+function importPreviewStage(){
+  const d=importDraft,host=(()=>{try{return new URL(d.sourceUrl).hostname.replace(/^www\./,"")}catch{return""}})();
+  const cuisines=importCuisines();
+  return `<div class="eyebrow">Preview</div><h2 id="import-title">Check the recipe</h2>
+  <div class="sub import-source">${esc(host)}</div>
+  ${d.image?`<img class="import-img" src="${esc(d.image)}" alt="" loading="lazy">`:""}
+  <label class="form-label" for="imp-title">Title</label>
+  <input class="form-input" id="imp-title" maxlength="200" value="${esc(d.title)}" oninput="importSet('title',this.value)">
+  <div class="two-col"><div><label class="form-label" for="imp-servings">Servings</label><input class="form-input" id="imp-servings" type="number" min="1" step="1" inputmode="decimal" value="${esc(d.servings)}" oninput="importSet('servings',this.value)"></div><div><label class="form-label" for="imp-time">Time (mins)</label><input class="form-input" id="imp-time" type="number" min="1" step="1" inputmode="numeric" value="${esc(d.cookingTime)}" oninput="importSet('cookingTime',this.value)"></div></div>
+  <label class="form-label" for="imp-cuisine">Cuisine</label>
+  <select class="form-input" id="imp-cuisine" onchange="importSet('cuisine',this.value)"><option value="">None</option>${cuisines.map(c=>`<option value="${esc(c)}" ${c===d.cuisine?"selected":""}>${esc(c)}</option>`).join("")}</select>
+  <div class="section-row"><h3>Ingredients</h3><button class="link" onclick="importAddIng()">+ Add ingredient</button></div>
+  <div id="imp-ings">${importIngredientsHtml()}</div>
+  <label class="form-label" for="imp-steps">Method (one step per line)</label>
+  <textarea class="form-input" id="imp-steps" rows="8" oninput="importSet('steps',this.value)">${esc(d.steps)}</textarea>
+  <p class="form-error" id="import-error" role="alert" hidden></p>
+  <div class="form-actions"><button class="secondary-button" onclick="importBack()">Change link</button><button class="primary-button" id="import-save" onclick="importSave()">Save recipe</button></div>`;
+}
+function importSet(key,value){if(importDraft)importDraft[key]=value}
+function importIng(i,key,value){if(importDraft?.ingredients[i])importDraft.ingredients[i][key]=value}
+function importRefreshIngs(){const el=byId("imp-ings");if(el)el.innerHTML=importIngredientsHtml()}
+function importAddIng(){importDraft.ingredients.push({quantity:"",unit:"",name:"",preparation:"",optional:false,isNew:false});importRefreshIngs()}
+function importRemoveIng(i){importDraft.ingredients.splice(i,1);importRefreshIngs()}
+function importBack(){const url=importDraft?.sourceUrl||"";importDraft=null;setImportSheet(importUrlStage("",null,url))}
+function importShowError(message){const el=byId("import-error");if(el){el.textContent=message;el.hidden=false;el.scrollIntoView?.({block:"nearest"})}}
+function importQuantity(text){
+  const t=String(text??"").trim().replace(",",".");
+  if(!t)return null;
+  let m=t.match(/^(\d+)\s+(\d+)\/(\d+)$/);if(m)return Number(m[1])+Number(m[2])/Number(m[3]);
+  m=t.match(/^(\d+)\/(\d+)$/);if(m)return Number(m[1])/Number(m[2]);
+  const n=Number(t);return Number.isFinite(n)&&n>=0?n:undefined;
+}
+async function importSave(){
+  const d=importDraft;if(!d)return;
+  if(!d.title.trim()){importShowError("Add a title");return}
+  const ingredients=[];
+  for(const [n,x] of d.ingredients.entries()){
+    if(!String(x.name).trim())continue;
+    const q=importQuantity(x.quantity);
+    if(q===undefined){importShowError(`Check the quantity on "${x.name}"`);return}
+    ingredients.push({quantity:q,unit:String(x.unit||"").trim(),name:String(x.name).trim(),preparation:String(x.preparation||"").trim(),optional:!!x.optional});
+  }
+  if(!ingredients.length){importShowError("Add at least one ingredient");return}
+  const num=v=>String(v).trim()===""?null:Number(v);
+  const servings=num(d.servings),cookingTime=num(d.cookingTime);
+  if(servings!==null&&!(servings>0)){importShowError("Servings must be above 0");return}
+  if(cookingTime!==null&&!(cookingTime>0)){importShowError("Time must be above 0");return}
+  const recipe={title:d.title.trim(),sourceUrl:d.sourceUrl,image:d.image||null,servings,cookingTime,cuisine:d.cuisine||null,steps:d.steps.split(/\n+/).map(x=>x.trim()).filter(Boolean),ingredients};
+  const button=byId("import-save");
+  if(button){button.disabled=true;button.textContent="Saving…"}
+  try{
+    const r=await api("/api/import/save",{method:"POST",body:JSON.stringify({recipe})});
+    closeImport();
+    toast(r.warning?`Recipe saved. ${r.warning}`:"Recipe saved");
+    invalidate("recipes");
+    try{await load("recipes",{force:true})}catch(e){}
+    show("recipe",r.recipeId);
+  }catch(e){
+    if(button){button.disabled=false;button.textContent="Save recipe"}
+    importShowError(e.message||"Couldn't save the recipe");
+  }
+}
 /* ---- Recipes list: search + filter pills (v0.3.3) ---- */
 let recipeQuery="",recipeFilter="All";
 function crumbs(items){
@@ -540,7 +652,7 @@ function clearRecipeSearch(){recipeQuery="";const input=byId("recipe-search");if
 function recipeFilterSet(name){recipeFilter=name;const pills=byId("recipe-filters");if(pills)pills.innerHTML=recipePillsHtml();refreshRecipeList()}
 function recipes(){
   const pills=recipePillsHtml();
-  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Meals",page:"meals"},{label:"Recipes"}])}<h1 class="screen-title page-title">Recipes</h1><div class="search-wrap">${icon("search")}<input id="recipe-search" type="search" value="${esc(recipeQuery)}" placeholder="Search recipes or ingredients" autocomplete="off" enterkeyhint="search" aria-label="Search recipes" oninput="recipeSearch(this.value)"><button class="search-clear" id="recipe-search-clear" aria-label="Clear search" onclick="clearRecipeSearch()"${recipeQuery?"":" hidden"}>${icon("x")}</button></div><div class="filterbar scroll" id="recipe-filters">${pills}</div><div id="recipe-list">${recipeListHtml()}</div></main>${nav("meals")}</div>`;
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Meals",page:"meals"},{label:"Recipes"}])}<div class="title-row"><h1 class="screen-title page-title">Recipes</h1><button class="plus" onclick="openImport()" aria-label="Add recipe from link">${icon("plus")}</button></div><div class="search-wrap">${icon("search")}<input id="recipe-search" type="search" value="${esc(recipeQuery)}" placeholder="Search recipes or ingredients" autocomplete="off" enterkeyhint="search" aria-label="Search recipes" oninput="recipeSearch(this.value)"><button class="search-clear" id="recipe-search-clear" aria-label="Clear search" onclick="clearRecipeSearch()"${recipeQuery?"":" hidden"}>${icon("x")}</button></div><div class="filterbar scroll" id="recipe-filters">${pills}</div><div id="recipe-list">${recipeListHtml()}</div></main>${nav("meals")}</div>`;
 }
 async function recipe(id){const cached=state.recipes.find(x=>x.id===id);if(cached&&(cached.ingredients||cached.recipeText||cached.notes))return renderRecipe(cached);const d=await api(`/api/recipes/${encodeURIComponent(id)}`),r=d.recipe;if(!r)throw Error("Recipe not found");const i=state.recipes.findIndex(x=>x.id===id);if(i>=0)state.recipes[i]={...state.recipes[i],...r};else state.recipes.push(r);return renderRecipe(state.recipes.find(x=>x.id===id)||r)}
 /* Recipe ticks are per device (localStorage), keyed by recipe id. i = ingredients, s = method steps. */

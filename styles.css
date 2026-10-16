@@ -427,3 +427,23 @@ button{font:inherit;border:0;cursor:pointer}.icon{width:1em;height:1em;flex:none
 .notes-version p{font-size:13px;line-height:1.5;margin:4px 0;color:#3d5565}
 details.notes-version summary{cursor:pointer;font-weight:700;font-size:14px}
 details.notes-version[open] summary{margin-bottom:6px}
+
+/* Recipe import v0.3.5 */
+.title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.form-error{margin:10px 0 0;color:var(--red);font-size:12px;font-weight:600}
+.form-error[hidden]{display:none}
+.form-warning{margin:12px 0 0;padding:12px;border-radius:12px;background:var(--yellow);font-size:13px;line-height:1.4}
+.form-warning .form-actions{margin-top:10px}
+.import-source{margin:0 0 4px}
+.import-img{width:100%;height:120px;object-fit:cover;border-radius:12px;margin:8px 0 2px;display:block}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.imp-ing{padding:8px 0;border-top:1px solid var(--line)}
+.imp-row{display:flex;gap:6px;align-items:center}
+.imp-qty{width:62px;flex:none;min-height:42px;padding:8px}
+.imp-unit{width:66px;flex:none;min-height:42px;padding:8px}
+.imp-name{flex:1;min-width:0;min-height:42px;padding:8px}
+.imp-del{background:none;color:var(--muted);display:flex;padding:6px;font-size:18px}
+.imp-meta{display:flex;align-items:center;gap:8px;margin-top:6px}
+.imp-prep{min-height:38px;padding:6px 10px;font-size:12px}
+.badge-new{flex:none;background:var(--mint);color:var(--green);border-radius:9px;padding:3px 7px;font-size:10px;font-weight:700}
+textarea.form-input{min-height:120px;resize:vertical;line-height:1.45}
