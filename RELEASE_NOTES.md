@@ -1,3 +1,32 @@
+# Daily Life v0.3.5
+
+_14 October 2026_
+
+## New: add a recipe from a link
+
+- **+** button on the Recipes screen. Paste a recipe link and tap **Fetch recipe**.
+- The Worker reads the recipe data embedded in the page (title, image, servings, time, cuisine, ingredients, method). Plain JavaScript, no external service.
+- **Editable preview** before anything is saved: title, servings, time (mins), cuisine (your existing cuisines), ingredient lines (quantity, unit, name, preparation), method (one step per line). Ingredients not yet in your Ingredients table carry a **New** badge.
+- **Save** creates the recipe, any new Ingredients, and one Ingredients Quantities row per line, then opens the recipe. Quantity (base) / Unit (base) are filled in for the future shopping list (tsp, tbsp and cups become ml; oz and lb become g; kg and l scale to g and ml).
+- If the link is already in your recipes you are warned and can open it or import anyway.
+- If a site can't be read (no recipe data, blocks bots, or is slow) you get an error and nothing is saved.
+- Costs about 5 Airtable calls per import (visible under Settings > API usage).
+
+## Worker
+
+- New endpoints `POST /api/import/preview` (no Airtable writes) and `POST /api/import/save`.
+- Safety: only http/https links to public sites (localhost, private and internal addresses are blocked, including after redirects); pages are capped at 2 MB and 8 seconds.
+- Ingredient matching ignores case, plurals and words such as "large" or "fresh". If Airtable rejects the image or cuisine, the recipe is saved without them and you are told.
+
+## Notes
+
+- Ingredient parsing is rule-based and will not be perfect (e.g. "Juice of 1 lemon" stays one line). That is what the preview is for.
+- A range such as "2-3 tbsp" uses the first number.
+- Field names checked against the Airtable base on 14 October 2026.
+- Fields written: Recipes `Name`, `link`, `Recipe text`, `Default servings`, `Cooking time (mins)`, `Cuisine`, `Image`, `Ingredients`, `Ingredients extracted`; Ingredients `Name`; Ingredients Quantities `Name` (e.g. "garlic 3 clove"), `Recipe`, `Ingredient`, `Original Quantity`, `Original Unit`, `Quantity (base)`, `Unit (base)`, `Preparation`, `Optional?`.
+- No schema changes. `icons.js` and `navigation.js` untouched.
+- Files changed: `worker.js`, `app.js`, `styles.css`.
+
 # Daily Life v0.3.4
 
 _14 October 2026_
