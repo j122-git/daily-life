@@ -1,3 +1,32 @@
+# Daily Life v0.3.6
+
+_16 October 2026_
+
+## Changed: Planner hub
+
+- To do and Events are now one **Planner** hub, like Meals (Recipes / Meal plan). The bottom nav is now **Home, Meals, Planner, More**, which frees a spot for Budget.
+- The Planner hub has two tiles: **To do** (task count) and **Events** (events this week). The existing screens are unchanged apart from a "Planner / To do" or "Planner / Events" breadcrumb above the title.
+- Home's tiles are now **Meals, Planner, Documents, Budget**. Home's Today section still lists today's meals and tasks.
+
+## New: Documents link
+
+- The **Documents** tile on Home (replacing the Family placeholder) opens the family Google Drive in a new tab.
+- The link is a Worker secret, never part of the site code. The Worker returns it from `GET /api/links`, and only to callers that send the app token. It uses no Airtable calls.
+- Until the secret is set, tapping the tile explains how to add it.
+
+## New: Budget placeholder
+
+- A "Coming soon" Budget tile on Home, ready for the next build.
+
+## User action
+
+- In Cloudflare, add a Worker secret **`FAMILY_DRIVE_URL`** with your Drive folder link (must start with `https://`).
+
+## Notes
+
+- No Airtable schema changes. `navigation.js` untouched. Routes: `#/planner` is new; `#/todo` and `#/events` still work.
+- Files changed: `worker.js`, `app.js`, `styles.css`, `icons.js` (folder and wallet icons).
+
 # Daily Life v0.3.5
 
 _14 October 2026_

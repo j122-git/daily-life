@@ -71,7 +71,7 @@ function overdueLabel(due){
   return `${n} day${n===1?"":"s"} overdue`;
 }
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:26px;color:var(--green)">${icon("soup")}</div>`}
-function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">${icon("house")}</span>Home</button><button class="nav ${a==="meals"?"active":""}" onclick="show('meals')"><span class="ni">${icon("utensils")}</span>Meals</button><button class="nav ${a==="todo"?"active":""}" onclick="show('todo')"><span class="ni">${icon("list-checks")}</span>Lists</button><button class="nav ${a==="events"?"active":""}" onclick="show('events')"><span class="ni">${icon("calendar-days")}</span>Events</button><button class="nav ${a==="settings"?"active":""}" onclick="show('settings')"><span class="ni">${icon("ellipsis")}</span>More</button></nav>`}
+function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">${icon("house")}</span>Home</button><button class="nav ${a==="meals"?"active":""}" onclick="show('meals')"><span class="ni">${icon("utensils")}</span>Meals</button><button class="nav ${a==="planner"?"active":""}" onclick="show('planner')"><span class="ni">${icon("clipboard-list")}</span>Planner</button><button class="nav ${a==="settings"?"active":""}" onclick="show('settings')"><span class="ni">${icon("ellipsis")}</span>More</button></nav>`}
 function header(title="",back=false,backTo="home",cog=false){return `<header class="header">${back?`<button class="back" onclick="show('${backTo}')" aria-label="Back">${icon("chevron-left")}</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1>${cog?`<button class="avatar" onclick="show('settings')" aria-label="Settings" title="Settings">${icon("settings")}</button>`:""}</header>`}
 async function load(kind,{force=false,background=false}={}){
   const meta=cacheMeta[kind];
@@ -421,11 +421,32 @@ function todayMealsHtml(){
   }).join("");
   return rows||`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`;
 }
-function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3),ec=eventsUpcoming(7).length,period=dayPeriod();return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('todo')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">To do</div><div class="module-sub">${state.todos.filter(t=>t.status!=="Done").length} tasks<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('events')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Events</div><div class="module-sub">${ec} this week<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="toast('Family coming next')"><div class="ico">${icon("users")}</div><div class="module-title">Family</div><div class="module-sub">Coming soon<span class="chev">${icon("chevron-right")}</span></div></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
+function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3),ec=eventsUpcoming(7).length,openTasks=state.todos.filter(t=>t.status!=="Done").length,period=dayPeriod();return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('planner')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">Planner</div><div class="module-sub">${openTasks} task${openTasks===1?"":"s"} · ${ec} event${ec===1?"":"s"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="openDocuments()"><div class="ico">${icon("folder")}</div><div class="module-title">Documents</div><div class="module-sub">Open in Drive<span class="chev">${icon("external-link")}</span></div></button><button class="module m-events" onclick="toast('Budget coming soon')"><div class="ico">${icon("wallet")}</div><div class="module-title">Budget</div><div class="module-sub">Coming soon<span class="chev">${icon("chevron-right")}</span></div></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
 function cookTime(v){if(v===null||v===undefined||v==="")return"";return typeof v==="number"?`${v} min`:String(v)}
 function meals(){
   const n=cacheMeta.recipes.loaded?state.recipes.length:0;
   return `<div class="shell">${header()}<main class="page"><h1 class="screen-title page-title">Meals</h1><div class="modules"><button class="module m-meal" onclick="show('recipes')"><div class="ico">${icon("book-open")}</div><div class="module-title">Recipes</div><div class="module-sub">${n?`${n} recipe${n===1?"":"s"}`:"Browse and cook"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('plan')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Meal plan</div><div class="module-sub">${esc(planCountText())}<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("meals")}</div>`;
+}
+/* ---- Planner hub and Documents link (v0.3.6) ---- */
+let familyLinks=null,linksPromise=null;
+function loadLinks(){
+  if(familyLinks&&!familyLinks.error)return Promise.resolve();
+  if(linksPromise)return linksPromise;
+  linksPromise=api("/api/links").then(d=>{familyLinks=d||{}}).catch(e=>{familyLinks={error:e?.message||"error"}}).finally(()=>{linksPromise=null});
+  return linksPromise;
+}
+function openDocuments(){
+  const url=familyLinks?.driveUrl;
+  if(url){window.open(url,"_blank","noopener,noreferrer");return}
+  if(familyLinks&&!familyLinks.error){toast("Documents link isn't set up yet. Add FAMILY_DRIVE_URL in Cloudflare.");return}
+  if(familyLinks?.error){toast("Couldn't load the link. Update the Worker to v0.3.6.");familyLinks=null;return}
+  toast("Loading the link, tap again in a moment");loadLinks();
+}
+function planner(){
+  const open=state.todos.filter(t=>t.status!=="Done").length,ec=eventsUpcoming(7).length;
+  const todoSub=cacheMeta.todos.loaded?`${open} task${open===1?"":"s"}`:"Tasks and chores";
+  const eventsSub=cacheMeta.events.loaded?`${ec} this week`:"What's on";
+  return `<div class="shell">${header()}<main class="page"><h1 class="screen-title page-title">Planner</h1><div class="modules"><button class="module m-todo" onclick="show('todo')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">To do</div><div class="module-sub">${todoSub}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('events')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Events</div><div class="module-sub">${eventsSub}<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("planner")}</div>`;
 }
 /* ---- Settings (v0.3.4) ---- */
 let apiUsage=null,releaseNotes=null;
@@ -762,7 +783,7 @@ function todo(){
         <button class="chev" onclick="editTodo('${esc(t.id)}')" aria-label="Edit task">${icon("chevron-right")}</button></div>`;
     }
   }
-  return `<div class="shell">${header("To do",false)}<main class="page"><div style="display:flex;justify-content:space-between;align-items:center"><h1 class="screen-title">To do</h1><button class="plus" onclick="openTodoForm()" aria-label="Add task">${icon("plus")}</button></div><div class="filterbar">${["All","Overdue","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first "+icon("arrow-down"):"Oldest first "+icon("arrow-up")}</button></div>${sections||'<div class="empty">No tasks found.</div>'}</main>${nav("todo")}</div>`;
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Planner",page:"planner"},{label:"To do"}])}<div class="title-row"><h1 class="screen-title page-title">To do</h1><button class="plus" onclick="openTodoForm()" aria-label="Add task">${icon("plus")}</button></div><div class="filterbar">${["All","Overdue","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first "+icon("arrow-down"):"Oldest first "+icon("arrow-up")}</button></div>${sections||'<div class="empty">No tasks found.</div>'}</main>${nav("planner")}</div>`;
 }
 function editTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;openTodoForm(t);load("todo-options")}
 async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;const previous=t.status,status=nextTodoStatus(previous);t.status=status;t.bucket=bucket(t);show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})});markLoaded("todos")}catch(e){t.status=previous;t.bucket=bucket(t);show("todo");toast("Couldn't update task: "+e.message)}}
@@ -770,7 +791,7 @@ async function deleteTodo(id){if(!confirm("Delete this task?"))return;try{await 
 function events(){
   const groups=groupEventsByDay(state.events);
   const body=groups.length?groups.map(([dayKey,list])=>`<div class="todo-group"><b>${eventDayLabel(dayKey)}</b></div>${list.map(e=>`<div class="card row"><div class="event-time">${eventTimeLabel(e)}</div><div class="grow"><div class="title">${esc(e.title)}</div>${e.location?`<div class="sub">${esc(e.location)}</div>`:""}</div></div>`).join("")}`).join(""):'<div class="empty">No events in the next 14 days.</div>';
-  return `<div class="shell">${header("Events",false)}<main class="page"><div style="display:flex;justify-content:space-between;align-items:center"><h1 class="screen-title">Events</h1><a class="plus" href="https://calendar.google.com/calendar/u/0/r/eventedit" target="_blank" rel="noopener" aria-label="Add event">${icon("plus")}</a></div>${body}</main>${nav("events")}</div>`;
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Planner",page:"planner"},{label:"Events"}])}<div class="title-row"><h1 class="screen-title page-title">Events</h1><a class="plus" href="https://calendar.google.com/calendar/u/0/r/eventedit" target="_blank" rel="noopener" aria-label="Add event">${icon("plus")}</a></div>${body}</main>${nav("planner")}</div>`;
 }
 function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
 function errorScreen(e){return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
@@ -781,12 +802,15 @@ async function show(page,id){
     if(!hasAppToken()){app.innerHTML=tokenScreen();return}
     if(page==="home"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await all()}
     else if(page==="plan"&&!(cacheMeta.mealPlan.loaded&&cacheMeta.recipes.loaded)){app.innerHTML='<div class="shell loading">Loading…</div>';await Promise.all([load("recipes"),load("mealPlan")])}
+    else if(page==="planner"&&!(cacheMeta.todos.loaded&&cacheMeta.events.loaded)){app.innerHTML='<div class="shell loading">Loading…</div>';await Promise.all([load("todos"),load("events")])}
     else if(page==="recipes"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("recipes")}
     else if(page==="todo"&&!cacheMeta.todos.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("todos")}
     else if(page==="events"&&!cacheMeta.events.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("events")}
-    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else if(page==="plan")h=plan();else if(page==="settings")h=settings();else if(page==="usage")h=usageScreen();else if(page==="release-notes")h=releaseNotesScreen();else h=todo();
+    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else if(page==="plan")h=plan();else if(page==="planner")h=planner();else if(page==="settings")h=settings();else if(page==="usage")h=usageScreen();else if(page==="release-notes")h=releaseNotesScreen();else h=todo();
     app.innerHTML=h;
     if(page==="usage")loadUsage();
+    if(page==="home")loadLinks();
+    if(page==="planner")refreshDataInBackground(["todos","events"]);
     if(page==="release-notes"||page==="settings"&&!releaseNotes)loadReleaseNotes();
     if(page==="settings"&&!apiUsage)loadUsage();
     if(page==="home")refreshDataInBackground(["recipes","todos","mealPlan","events"]);
