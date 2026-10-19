@@ -16,6 +16,7 @@
  *   #/recipes
  *   #/recipe/<recipe-id>
  *   #/todo
+ *   #/budget, #/budget-categories, #/budget-trends (tabs: replace history)
  */
 
 (() => {
@@ -23,6 +24,9 @@
 
   const ROUTER_KEY = "daily-life-route-v1";
   let handlingPopState = false;
+
+  // Pages that are tabs of one module (see navigate()).
+  const TAB_GROUPS = [["budget", "budget-categories", "budget-trends"]];
 
   function routeFor(page, id) {
     if (page === "recipe" && id) {
@@ -63,7 +67,13 @@
     const url = routeFor(route.page, route.id);
 
     if (!options.fromHistory && window.location.hash !== url) {
-      window.history.pushState(
+      // Switching between tabs of one module replaces the history entry,
+      // so Back leaves the module instead of stepping through its tabs.
+      const previous = window.history.state && window.history.state.page;
+      const sameTabs = previous && TAB_GROUPS.some(
+        group => group.includes(previous) && group.includes(route.page)
+      );
+      window.history[sameTabs ? "replaceState" : "pushState"](
         { dailyLife: true, page: route.page, id: route.id || null },
         "",
         url

@@ -1,9 +1,9 @@
 /* Daily Life frontend — Cloudflare Worker + Airtable */
 const API=(window.DAILY_LIFE_API||"https://daily-life.thibaud-guerrero.workers.dev/").replace(/\/$/,"");
 let APP_TOKEN=localStorage.getItem("dailyLifeAppToken")||"";
-let state={recipes:[],todos:[],mealPlan:[],events:[],todoOptions:{categories:[],statuses:[]}};
+let state={recipes:[],todos:[],mealPlan:[],events:[],budget:null,budgetError:null,todoOptions:{categories:[],statuses:[]}};
 const CACHE_TTL=60*1000;
-const cacheMeta={recipes:{loaded:false,at:0,promise:null},todos:{loaded:false,at:0,promise:null},mealPlan:{loaded:false,at:0,promise:null},events:{loaded:false,at:0,promise:null},"todo-options":{loaded:false,at:0,promise:null}};
+const cacheMeta={recipes:{loaded:false,at:0,promise:null},todos:{loaded:false,at:0,promise:null},mealPlan:{loaded:false,at:0,promise:null},events:{loaded:false,at:0,promise:null},"todo-options":{loaded:false,at:0,promise:null},budget:{loaded:false,at:0,promise:null}};
 const isFresh=k=>cacheMeta[k].loaded&&(Date.now()-cacheMeta[k].at)<CACHE_TTL;
 function markLoaded(k){cacheMeta[k].loaded=true;cacheMeta[k].at=Date.now()}
 function invalidate(k){cacheMeta[k].loaded=false;cacheMeta[k].at=0}
@@ -71,13 +71,13 @@ function overdueLabel(due){
   return `${n} day${n===1?"":"s"} overdue`;
 }
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:26px;color:var(--green)">${icon("soup")}</div>`}
-function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">${icon("house")}</span>Home</button><button class="nav ${a==="meals"?"active":""}" onclick="show('meals')"><span class="ni">${icon("utensils")}</span>Meals</button><button class="nav ${a==="planner"?"active":""}" onclick="show('planner')"><span class="ni">${icon("clipboard-list")}</span>Planner</button><button class="nav ${a==="settings"?"active":""}" onclick="show('settings')"><span class="ni">${icon("ellipsis")}</span>More</button></nav>`}
+function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">${icon("house")}</span>Home</button><button class="nav ${a==="meals"?"active":""}" onclick="show('meals')"><span class="ni">${icon("utensils")}</span>Meals</button><button class="nav ${a==="planner"?"active":""}" onclick="show('planner')"><span class="ni">${icon("clipboard-list")}</span>Planner</button><button class="nav ${a==="budget"?"active":""}" onclick="show('budget')"><span class="ni">${icon("wallet")}</span>Budget</button><button class="nav ${a==="settings"?"active":""}" onclick="show('settings')"><span class="ni">${icon("ellipsis")}</span>More</button></nav>`}
 function header(title="",back=false,backTo="home",cog=false){return `<header class="header">${back?`<button class="back" onclick="show('${backTo}')" aria-label="Back">${icon("chevron-left")}</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1>${cog?`<button class="avatar" onclick="show('settings')" aria-label="Settings" title="Settings">${icon("settings")}</button>`:""}</header>`}
 async function load(kind,{force=false,background=false}={}){
   const meta=cacheMeta[kind];
   if(!force&&meta.loaded){if(!isFresh(kind)&&!meta.promise)meta.promise=load(kind,{force:true,background:true}).finally(()=>meta.promise=null);return state}
   if(meta.promise)return meta.promise;
-  const path=kind==="recipes"?"/api/recipes":kind==="todos"?"/api/todos":kind==="todo-options"?"/api/todo-options":kind==="events"?"/api/events?days=14":"/api/meal-plan";
+  const path=kind==="recipes"?"/api/recipes":kind==="todos"?"/api/todos":kind==="todo-options"?"/api/todo-options":kind==="events"?"/api/events?days=14":kind==="budget"?"/api/budget":"/api/meal-plan";
   const request=(async()=>{try{
     const d=await api(path);
     if(kind==="recipes")state.recipes=d.recipes||[];
@@ -85,17 +85,19 @@ async function load(kind,{force=false,background=false}={}){
     if(kind==="todo-options")state.todoOptions={categories:d.categories||[],statuses:d.statuses||[]};
     if(kind==="mealPlan")state.mealPlan=d.mealPlan||[];
     if(kind==="events")state.events=d.events||[];
+    if(kind==="budget"){state.budget=d;state.budgetError=null}
     markLoaded(kind); return d;
   }catch(e){
     if(kind==="todo-options"){state.todoOptions={categories:[],statuses:[]};markLoaded(kind);return {categories:[],statuses:[],fallback:true}}
+    if(kind==="budget"){if(background&&state.budget){console.warn("Background refresh failed for budget.",e);return state}state.budget=null;state.budgetError=e?.message||"Request failed";markLoaded(kind);return {fallback:true}}
     if(kind==="events"&&!(background&&meta.loaded)){state.events=[];markLoaded(kind);return {events:[],fallback:true}}
     if(background&&meta.loaded){console.warn(`Background refresh failed for ${kind}.`,e);return state}
     throw e;
   }})();
   meta.promise=request; try{return await request}finally{if(meta.promise===request)meta.promise=null}
 }
-async function all({force=false}={}){await Promise.all([load("recipes",{force}),load("todos",{force}),load("mealPlan",{force}),load("events",{force})]);return state}
-function refreshDataInBackground(kinds=["recipes","todos","mealPlan","events"]){for(const k of kinds)if(cacheMeta[k].loaded&&!cacheMeta[k].promise)load(k,{force:true,background:true})}
+async function all({force=false}={}){await Promise.all([load("recipes",{force}),load("todos",{force}),load("mealPlan",{force}),load("events",{force}),load("budget",{force})]);return state}
+function refreshDataInBackground(kinds=["recipes","todos","mealPlan","events","budget"]){for(const k of kinds)if(cacheMeta[k].loaded&&!cacheMeta[k].promise)load(k,{force:true,background:true})}
 function recipeFor(item){return state.recipes.find(r=>r.id===item?.recipeId)}
 
 // Events are timestamps (or date-only for all-day items), unlike task due
@@ -421,7 +423,7 @@ function todayMealsHtml(){
   }).join("");
   return rows||`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`;
 }
-function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3),ec=eventsUpcoming(7).length,openTasks=state.todos.filter(t=>t.status!=="Done").length,period=dayPeriod();return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('planner')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">Planner</div><div class="module-sub">${openTasks} task${openTasks===1?"":"s"} · ${ec} event${ec===1?"":"s"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="openDocuments()"><div class="ico">${icon("folder")}</div><div class="module-title">Documents</div><div class="module-sub">Open in Drive<span class="chev">${icon("external-link")}</span></div></button><button class="module m-events" onclick="toast('Budget coming soon')"><div class="ico">${icon("wallet")}</div><div class="module-title">Budget</div><div class="module-sub">Coming soon<span class="chev">${icon("chevron-right")}</span></div></button></div><div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
+function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3),ec=eventsUpcoming(7).length,openTasks=state.todos.filter(t=>t.status!=="Done").length,period=dayPeriod();return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('planner')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">Planner</div><div class="module-sub">${openTasks} task${openTasks===1?"":"s"} · ${ec} event${ec===1?"":"s"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="openDocuments()"><div class="ico">${icon("folder")}</div><div class="module-title">Documents</div><div class="module-sub">Open in Drive<span class="chev">${icon("external-link")}</span></div></button><button class="module m-budget" onclick="show('budget')">${budgetBadge()}<div class="ico">${icon("wallet")}</div><div class="module-title">Budget</div><div class="module-sub">${esc(budgetTileSub())}<span class="chev">${icon("chevron-right")}</span></div></button></div>${budgetAttentionHtml()}<div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
 function cookTime(v){if(v===null||v===undefined||v==="")return"";return typeof v==="number"?`${v} min`:String(v)}
 function meals(){
   const n=cacheMeta.recipes.loaded?state.recipes.length:0;
@@ -793,6 +795,106 @@ function events(){
   const body=groups.length?groups.map(([dayKey,list])=>`<div class="todo-group"><b>${eventDayLabel(dayKey)}</b></div>${list.map(e=>`<div class="card row"><div class="event-time">${eventTimeLabel(e)}</div><div class="grow"><div class="title">${esc(e.title)}</div>${e.location?`<div class="sub">${esc(e.location)}</div>`:""}</div></div>`).join("")}`).join(""):'<div class="empty">No events in the next 14 days.</div>';
   return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Planner",page:"planner"},{label:"Events"}])}<div class="title-row"><h1 class="screen-title page-title">Events</h1><a class="plus" href="https://calendar.google.com/calendar/u/0/r/eventedit" target="_blank" rel="noopener" aria-label="Add event">${icon("plus")}</a></div>${body}</main>${nav("planner")}</div>`;
 }
+/* ---- Budget (v0.4.0) ---- */
+const BUDGET_COLORS=["#0f806a","#e0a100","#6b4fb0","#c4573f","#2f7fb5","#9aa5ab","#b04f8f","#4f9a3a","#7a6a4f","#3f6f8f"];
+function gbp(n){return "£"+(Number(n)||0).toLocaleString("en-GB",{maximumFractionDigits:0})}
+function gbpShort(n){const v=Number(n)||0;return v>=1000?"£"+(v/1000).toFixed(1)+"k":"£"+Math.round(v)}
+function monthShort(key){const [y,m]=key.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString("en-GB",{month:"short"})}
+function budgetColor(id){const i=(state.budget?.categories||[]).findIndex(c=>c.id===id);return BUDGET_COLORS[(i<0?0:i)%BUDGET_COLORS.length]}
+function budgetTone(pct){return pct>=100?"high":pct>=80?"mid":""}
+function budgetAlertText(a){
+  if(a.type==="over")return `<b>${esc(a.category)}</b> is ${gbp(a.amount)} over budget`;
+  if(a.type==="near")return `<b>${esc(a.category)}</b> has used ${a.percent}% of its budget`;
+  return `<b>${esc(a.category)}</b> is ${a.percent}% higher than the same point last month`;
+}
+function budgetBadge(){const n=state.budget?.alerts?.count||0;return n?`<span class="bd-badge" aria-label="${n} budget alert${n===1?"":"s"}">${n}</span>`:""}
+function budgetTileSub(){
+  const b=state.budget;if(!b||!b.hasBudget)return"Monthly spending";
+  return b.totals.remaining>=0?`${gbp(b.totals.remaining)} left this month`:`${gbp(-b.totals.remaining)} over budget`;
+}
+function budgetAttentionHtml(){
+  const a=state.budget?.alerts;if(!a||!a.count)return"";
+  const more=a.count-1;
+  return `<div class="section-head"><h2>Needs attention</h2></div><div class="card bd-attn" onclick="show('budget')"><div class="title" style="font-weight:500">${budgetAlertText(a.items[0])}</div>${more?`<div class="sub">${more} more alert${more===1?"":"s"} in Budget</div>`:""}</div>`;
+}
+function budgetTabs(active){
+  return `<div class="filterbar">${[["budget","Overview"],["budget-categories","Categories"],["budget-trends","Trends"]].map(([p,l])=>`<button class="pill${p===active?" active":""}" onclick="show('${p}')">${l}</button>`).join("")}</div>`;
+}
+function budgetShell(page,label,inner){
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Budget",page:"budget"},{label}])}<h1 class="screen-title page-title">Budget</h1>${budgetTabs(page)}${inner}</main>${nav("budget")}</div>`;
+}
+function budgetGate(){
+  if(state.budget)return"";
+  const msg=state.budgetError||"Unknown error",old=/not found|404/i.test(msg);
+  return `<div class="card bd-card"><div class="title">Couldn't load the budget</div><p class="sub">${old?"Update your Worker to v0.4.0 or later.":esc(msg)}</p></div>`;
+}
+function budgetOverview(){
+  const gate=budgetGate();if(gate)return budgetShell("budget","Overview",gate);
+  const b=state.budget,t=b.totals,pct=Math.min(100,t.percent||0);
+  const [y,m]=b.month.split("-").map(Number);
+  const range=`1–${b.daysInMonth} ${monthShort(b.month)} ${y}`;
+  const remainingBlock=b.hasBudget?(t.remaining>=0?`<div class="bd-right"><div class="sub">Remaining</div><div class="bd-big">${gbp(t.remaining)}</div></div>`:`<div class="bd-right"><div class="sub">Over budget by</div><div class="bd-big over">${gbp(-t.remaining)}</div></div>`):"";
+  let html=`<div class="card bd-card"><div class="sub">This month · ${range}</div><div class="bd-row" style="margin-top:10px"><div><div class="sub">Spent</div><div class="bd-big">${gbp(t.spent)}</div></div>${remainingBlock}</div>${b.hasBudget?`<div class="bd-bar ${budgetTone(t.percent)}"><i style="width:${pct}%"></i></div><div class="sub">${t.percent}% of ${gbp(t.budget)} · day ${b.dayOfMonth} of ${b.daysInMonth}</div>`:`<p class="sub" style="margin-top:12px">No monthly budgets set yet. Add them in Airtable (Budget categories, Monthly budget). In-app editing arrives in v0.4.1.</p>`}</div>`;
+  html+=`<h2 class="bd-h">Alerts</h2>`;
+  html+=b.alerts.count?`<div class="card bd-card">${b.alerts.items.map(a=>`<div class="bd-alert"><i class="bd-dot ${a.type}"></i><div>${budgetAlertText(a)}</div></div>`).join("")}</div>`:`<div class="card bd-card"><div class="sub">No alerts. You're on track.</div></div>`;
+  const parts=b.categories.filter(c=>c.spent>0);
+  html+=`<h2 class="bd-h">Spend by category</h2>`;
+  if(!parts.length)html+=`<div class="card bd-card"><div class="sub">${b.transactionCount?"No categorised spend yet.":"No spend this month yet. Load your bank CSV into the Transactions table in Airtable."}</div></div>`;
+  else{
+    const C=2*Math.PI*40;let off=0;
+    const segs=parts.map(c=>{const len=c.spent/t.spent*C,el=`<circle cx="50" cy="50" r="40" stroke="${budgetColor(c.id)}" stroke-dasharray="${len.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`;off+=len;return el}).join("");
+    html+=`<div class="card bd-card bd-donut"><div class="bd-donut-wrap"><svg viewBox="0 0 100 100" width="132" height="132" role="img" aria-label="Share of spend by category">${segs}</svg><div class="bd-donut-center"><div><b>${gbp(t.spent)}</b><span class="sub">spent</span></div></div></div><div class="bd-legend">${parts.map(c=>`<div><span><i style="background:${budgetColor(c.id)}"></i>${esc(c.name)}</span><b>${gbp(c.spent)}</b></div>`).join("")}</div></div>`;
+  }
+  if(b.unmatched)html+=`<p class="token-footnote">${b.unmatched} transaction${b.unmatched===1?"":"s"} had no matching rule${b.unmatched===1?"":"s"} and ${b.unmatched===1?"was":"were"} counted as Other. Add a Merchant rule in Airtable to categorise ${b.unmatched===1?"it":"them"}.</p>`;
+  return budgetShell("budget","Overview",html);
+}
+function budgetCategories(){
+  const gate=budgetGate();if(gate)return budgetShell("budget-categories","Categories",gate);
+  const b=state.budget;
+  if(!b.categories.length)return budgetShell("budget-categories","Categories",`<div class="empty">No categories yet. Add them in Airtable (Budget categories).</div>`);
+  const rows=b.categories.map(c=>{
+    const has=c.budget>0,pct=Math.min(100,c.percent||0),over=c.alerts.find(a=>a.type==="over"),near=c.alerts.find(a=>a.type==="near"),rise=c.alerts.find(a=>a.type==="rising");
+    let status,cls="";
+    if(!has)status=c.spent>0?"No budget set":"No budget set · no spend yet";
+    else if(over){status=`${gbp(over.amount)} over budget`;cls="over"}
+    else if(near){status=`${c.percent}% used · nearing budget`;cls="near"}
+    else status=`${c.percent}% used`;
+    if(rise){status+=` · +${rise.percent}% vs last month`;if(!cls)cls="rising"}
+    return `<div class="bd-cat"><div class="bd-row"><b>${esc(c.name)}</b><span class="bd-amt">${gbp(c.spent)}${has?` / ${gbp(c.budget)}`:""}</span></div><div class="bd-bar ${has?budgetTone(c.percent):""}"><i style="width:${has?pct:0}%"></i></div><div class="bd-status ${cls}">${esc(status)}</div></div>`;
+  }).join("");
+  return budgetShell("budget-categories","Categories",`<div class="card bd-card" style="padding-top:4px;padding-bottom:4px">${rows}</div>`);
+}
+function sparkline(series,color){
+  if(series.length<2)return "";
+  const w=64,h=24,lo=Math.min(...series),hi=Math.max(...series),span=hi-lo||1;
+  const pts=series.map((v,i)=>[2+i*(w-4)/(series.length-1),h-2-(v-lo)/span*(h-4)]);
+  const last=pts[pts.length-1];
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3" fill="${color}"/></svg>`;
+}
+function budgetTrends(){
+  const gate=budgetGate();if(gate)return budgetShell("budget-trends","Trends",gate);
+  const b=state.budget,tr=b.trends,months=tr.months,budget=b.totals.budget;
+  const H=100,max=Math.max(budget,...months.map(m=>m.total),1);
+  const bl=budget>0?budget/max*H:0;
+  let html=`<div class="card bd-card"><div class="bd-row"><b>Total spend</b><span class="sub">Last ${months.length} months</span></div><div class="bd-chart" style="height:${H+28}px">${budget>0?`<div class="bd-budget" style="bottom:${bl.toFixed(1)}px"></div><span class="bd-budget-label" style="bottom:${(bl+3).toFixed(1)}px">Budget ${gbp(budget)}</span>`:""}${months.map(m=>`<div class="bd-col"><div class="bd-total">${gbpShort(m.total)}</div><div class="bd-barfill${m.partial?" partial":""}" style="height:${(m.total/max*H).toFixed(1)}px"></div></div>`).join("")}</div><div class="bd-months">${months.map(m=>`<div>${monthShort(m.month)}${m.partial?"*":""}</div>`).join("")}</div><div class="sub" style="margin-top:8px;font-size:11px">* month to date, excluded from drift</div></div>`;
+  html+=`<h2 class="bd-h" style="margin-bottom:2px">Category drift</h2>`;
+  if(!tr.drift.length){
+    html+=`<div class="card bd-card"><div class="sub">Drift appears once at least one month has closed. Trends build up as each month is rolled into Budget history.</div></div>`;
+  }else{
+    const need=tr.closedMonths<4;
+    const lastKey=tr.closedKeys[tr.closedKeys.length-1];
+    html+=`<div class="sub">${need?`Needs 4 closed months (${tr.closedMonths} so far)`:`${monthShort(lastKey)} vs the previous 3-month average · worst first`}</div>`;
+    const rank=d=>d.change===null?-999:d.change;
+    const rows=[...tr.drift].sort((a,b)=>rank(b)-rank(a)).map(d=>{
+      const color=d.status==="rising"?"var(--red)":d.status==="falling"?"var(--green)":"var(--muted)";
+      const chip=d.status==="rising"?`Rising +${d.change}%`:d.status==="falling"?`Falling −${Math.abs(d.change)}%`:d.status==="steady"?"Steady":"Building";
+      const sub=d.average!==null?`${monthShort(lastKey)} ${gbp(d.last)} · avg ${gbp(d.average)}`:`${monthShort(lastKey)} ${gbp(d.last)}`;
+      return `<div class="bd-drift"><div class="grow"><div class="title">${esc(d.name)}</div><div class="sub">${esc(sub)}</div></div>${sparkline(d.series,color)}<span class="chip ${d.status}">${chip}</span></div>`;
+    }).join("");
+    html+=`<div class="card bd-card" style="padding-top:0;padding-bottom:0;margin-top:8px">${rows}</div>`;
+  }
+  return budgetShell("budget-trends","Trends",html);
+}
 function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
 function errorScreen(e){return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
 async function show(page,id){
@@ -806,17 +908,19 @@ async function show(page,id){
     else if(page==="recipes"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("recipes")}
     else if(page==="todo"&&!cacheMeta.todos.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("todos")}
     else if(page==="events"&&!cacheMeta.events.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("events")}
-    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else if(page==="plan")h=plan();else if(page==="planner")h=planner();else if(page==="settings")h=settings();else if(page==="usage")h=usageScreen();else if(page==="release-notes")h=releaseNotesScreen();else h=todo();
+    else if(page.startsWith("budget")&&!cacheMeta.budget.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("budget")}
+    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else if(page==="plan")h=plan();else if(page==="planner")h=planner();else if(page==="settings")h=settings();else if(page==="usage")h=usageScreen();else if(page==="release-notes")h=releaseNotesScreen();else if(page==="budget")h=budgetOverview();else if(page==="budget-categories")h=budgetCategories();else if(page==="budget-trends")h=budgetTrends();else h=todo();
     app.innerHTML=h;
     if(page==="usage")loadUsage();
     if(page==="home")loadLinks();
     if(page==="planner")refreshDataInBackground(["todos","events"]);
     if(page==="release-notes"||page==="settings"&&!releaseNotes)loadReleaseNotes();
     if(page==="settings"&&!apiUsage)loadUsage();
-    if(page==="home")refreshDataInBackground(["recipes","todos","mealPlan","events"]);
+    if(page==="home")refreshDataInBackground(["recipes","todos","mealPlan","events","budget"]);
     if(page==="meals"||page==="recipes"||page==="recipe")refreshDataInBackground(["recipes"]);
     if(page==="todo"){refreshDataInBackground(["todos"]);if(!cacheMeta["todo-options"].loaded)load("todo-options",{background:true})}
     if(page==="events")refreshDataInBackground(["events"]);
+    if(page.startsWith("budget"))refreshDataInBackground(["budget"]);
     if(page==="plan")refreshDataInBackground(["mealPlan","recipes"]);
   }catch(e){console.error(e);app.innerHTML=errorScreen(e)}
 }

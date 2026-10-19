@@ -1,3 +1,40 @@
+# Daily Life v0.4.0
+
+_18 October 2026_
+
+## New: Budget module (read-only)
+
+- **Budget** has its own tab: the bottom nav is now **Home, Meals, Planner, Budget, More**. Home's Budget tile shows money left this month and an alert badge, and a "Needs attention" card appears on Home when something is flagged.
+- Three tabs under a "Budget / ..." breadcrumb, using the same header and pill styling as the other modules:
+  - **Overview:** spent vs remaining, alerts, and a donut of spend by category.
+  - **Categories:** a progress bar per category (green, amber from 80%, red when over budget).
+  - **Trends:** total spend per month against the budget line, plus **category drift**: each category's last closed month against the average of the 3 months before it, shown as Rising (+15% or more), Steady or Falling (-10% or less), worst first.
+- **Alerts** (in-app only, no push): category over budget, category at 80% or more of budget, and a category 15% or more above the same point last month (ignored for tiny amounts).
+
+## How the numbers are worked out
+
+- Loaded from the new Airtable tables **Budget categories**, **Transactions**, **Merchant rules** and **Budget history**.
+- Account **Amex**: a positive amount is spend. Any other account (HSBC): a negative amount is spend. Credits and refunds are ignored.
+- Category: the row's **Category override**, else the longest matching **Merchant rule** (text contained in the description), else the category named **Other**.
+- Rows ticked **Exclude**, and card payments or transfers (e.g. "American Express payment"), are ignored so nothing is counted twice.
+- Closed months come from Budget history, plus the previous month while its transactions are still held. Drift needs 4 closed months.
+
+## Worker
+
+- New endpoint `GET /api/budget` (one cached payload, 10 minutes, about 4 Airtable calls per refresh, counted in Settings > API usage).
+
+## User action
+
+- Deploy the new `worker.js` in Cloudflare.
+- In Airtable, set **Monthly budget** on each Budget categories row, add **Merchant rules** (e.g. "tesco" = Groceries) and load your bank CSVs into **Transactions** (Date, Description, Amount, Account).
+
+## Notes
+
+- Not in this release: editing budgets in the app (v0.4.1) and the automatic monthly roll-up into Budget history (v0.4.2), so Trends fill up as history is added.
+- `navigation.js`: switching between the Budget tabs replaces the history entry, so Back leaves the module.
+- No changes to existing tables. `icons.js` untouched.
+- Files changed: `worker.js`, `app.js`, `styles.css`, `navigation.js`.
+
 # Daily Life v0.3.6
 
 _16 October 2026_
