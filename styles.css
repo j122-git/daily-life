@@ -449,7 +449,7 @@ details.notes-version[open] summary{margin-bottom:6px}
 textarea.form-input{min-height:120px;resize:vertical;line-height:1.45}
 
 /* Budget v0.4.0 */
-.m-budget{background:var(--yellow);position:relative}
+.m-budget{background:var(--lav);position:relative}
 .bd-badge{position:absolute;top:12px;right:12px;min-width:24px;height:24px;border-radius:12px;background:var(--red);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;padding:0 6px}
 .bd-card{padding:16px}
 .bd-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
