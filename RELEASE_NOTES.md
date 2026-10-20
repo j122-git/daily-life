@@ -1,3 +1,30 @@
+# Daily Life v0.4.1
+
+_19 October 2026_
+
+## New: edit budgets in the app
+
+- **Categories** now has an **Edit budgets** button. It opens a sheet with one row per category: name, monthly £ amount and up/down arrows to reorder.
+- **+ Add category** adds a new row. Rename any category by editing its name. The total monthly budget (the sum of the categories) updates as you type.
+- **Save budgets** writes everything to Airtable in one go; the Overview, Categories, Trends and Home budget tile update straight away.
+- Categories cannot be deleted in the app, so history and merchant rules stay linked. Remove one in Airtable if you ever need to.
+- Spend with no matching Merchant rule is counted under the category named **Other**. If there is no category called Other it is not counted, and Overview says so.
+
+## Worker
+
+- New endpoint `POST /api/budget/categories`. It checks names (required, unique) and amounts (0 to 100,000), updates existing categories, creates new ones and clears the budget cache.
+- Costs about 1 Airtable call per save (10 records per request).
+- `/api/budget` now also returns `fallbackName`.
+
+## User action
+
+- Deploy the new `worker.js`. This release includes everything from v0.4.0, so deploy both together if v0.4.0 is not live yet.
+
+## Notes
+
+- No Airtable schema changes. Budget categories already has Name, Monthly budget and Order.
+- Files changed: `worker.js`, `app.js`, `styles.css`, `icons.js` (chevron-up, chevron-down, pencil).
+
 # Daily Life v0.4.0
 
 _18 October 2026_

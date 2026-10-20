@@ -834,7 +834,7 @@ function budgetOverview(){
   const [y,m]=b.month.split("-").map(Number);
   const range=`1–${b.daysInMonth} ${monthShort(b.month)} ${y}`;
   const remainingBlock=b.hasBudget?(t.remaining>=0?`<div class="bd-right"><div class="sub">Remaining</div><div class="bd-big">${gbp(t.remaining)}</div></div>`:`<div class="bd-right"><div class="sub">Over budget by</div><div class="bd-big over">${gbp(-t.remaining)}</div></div>`):"";
-  let html=`<div class="card bd-card"><div class="sub">This month · ${range}</div><div class="bd-row" style="margin-top:10px"><div><div class="sub">Spent</div><div class="bd-big">${gbp(t.spent)}</div></div>${remainingBlock}</div>${b.hasBudget?`<div class="bd-bar ${budgetTone(t.percent)}"><i style="width:${pct}%"></i></div><div class="sub">${t.percent}% of ${gbp(t.budget)} · day ${b.dayOfMonth} of ${b.daysInMonth}</div>`:`<p class="sub" style="margin-top:12px">No monthly budgets set yet. Add them in Airtable (Budget categories, Monthly budget). In-app editing arrives in v0.4.1.</p>`}</div>`;
+  let html=`<div class="card bd-card"><div class="sub">This month · ${range}</div><div class="bd-row" style="margin-top:10px"><div><div class="sub">Spent</div><div class="bd-big">${gbp(t.spent)}</div></div>${remainingBlock}</div>${b.hasBudget?`<div class="bd-bar ${budgetTone(t.percent)}"><i style="width:${pct}%"></i></div><div class="sub">${t.percent}% of ${gbp(t.budget)} · day ${b.dayOfMonth} of ${b.daysInMonth}</div>`:`<p class="sub" style="margin-top:12px">No monthly budgets set yet. Add them in Airtable (Budget categories, Monthly budget). Set them under Categories, Edit budgets.</p>`}</div>`;
   html+=`<h2 class="bd-h">Alerts</h2>`;
   html+=b.alerts.count?`<div class="card bd-card">${b.alerts.items.map(a=>`<div class="bd-alert"><i class="bd-dot ${a.type}"></i><div>${budgetAlertText(a)}</div></div>`).join("")}</div>`:`<div class="card bd-card"><div class="sub">No alerts. You're on track.</div></div>`;
   const parts=b.categories.filter(c=>c.spent>0);
@@ -845,13 +845,13 @@ function budgetOverview(){
     const segs=parts.map(c=>{const len=c.spent/t.spent*C,el=`<circle cx="50" cy="50" r="40" stroke="${budgetColor(c.id)}" stroke-dasharray="${len.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`;off+=len;return el}).join("");
     html+=`<div class="card bd-card bd-donut"><div class="bd-donut-wrap"><svg viewBox="0 0 100 100" width="132" height="132" role="img" aria-label="Share of spend by category">${segs}</svg><div class="bd-donut-center"><div><b>${gbp(t.spent)}</b><span class="sub">spent</span></div></div></div><div class="bd-legend">${parts.map(c=>`<div><span><i style="background:${budgetColor(c.id)}"></i>${esc(c.name)}</span><b>${gbp(c.spent)}</b></div>`).join("")}</div></div>`;
   }
-  if(b.unmatched)html+=`<p class="token-footnote">${b.unmatched} transaction${b.unmatched===1?"":"s"} had no matching rule${b.unmatched===1?"":"s"} and ${b.unmatched===1?"was":"were"} counted as Other. Add a Merchant rule in Airtable to categorise ${b.unmatched===1?"it":"them"}.</p>`;
+  if(b.unmatched)html+=`<p class="token-footnote">${b.unmatched} transaction${b.unmatched===1?"":"s"} had no matching merchant rule${b.unmatched===1?"":"s"}${b.fallbackName?` and ${b.unmatched===1?"was":"were"} counted as ${esc(b.fallbackName)}`:` and ${b.unmatched===1?"was":"were"} not counted. Add a category called Other to catch them`}. Add a Merchant rule in Airtable to categorise ${b.unmatched===1?"it":"them"}.</p>`;
   return budgetShell("budget","Overview",html);
 }
 function budgetCategories(){
   const gate=budgetGate();if(gate)return budgetShell("budget-categories","Categories",gate);
   const b=state.budget;
-  if(!b.categories.length)return budgetShell("budget-categories","Categories",`<div class="empty">No categories yet. Add them in Airtable (Budget categories).</div>`);
+  if(!b.categories.length)return budgetShell("budget-categories","Categories",`${budgetEditBar()}<div class="empty">No categories yet. Use Edit budgets to add some.</div>`);
   const rows=b.categories.map(c=>{
     const has=c.budget>0,pct=Math.min(100,c.percent||0),over=c.alerts.find(a=>a.type==="over"),near=c.alerts.find(a=>a.type==="near"),rise=c.alerts.find(a=>a.type==="rising");
     let status,cls="";
@@ -862,7 +862,7 @@ function budgetCategories(){
     if(rise){status+=` · +${rise.percent}% vs last month`;if(!cls)cls="rising"}
     return `<div class="bd-cat"><div class="bd-row"><b>${esc(c.name)}</b><span class="bd-amt">${gbp(c.spent)}${has?` / ${gbp(c.budget)}`:""}</span></div><div class="bd-bar ${has?budgetTone(c.percent):""}"><i style="width:${has?pct:0}%"></i></div><div class="bd-status ${cls}">${esc(status)}</div></div>`;
   }).join("");
-  return budgetShell("budget-categories","Categories",`<div class="card bd-card" style="padding-top:4px;padding-bottom:4px">${rows}</div>`);
+  return budgetShell("budget-categories","Categories",`${budgetEditBar()}<div class="card bd-card" style="padding-top:4px;padding-bottom:4px">${rows}</div>`);
 }
 function sparkline(series,color){
   if(series.length<2)return "";
@@ -894,6 +894,56 @@ function budgetTrends(){
     html+=`<div class="card bd-card" style="padding-top:0;padding-bottom:0;margin-top:8px">${rows}</div>`;
   }
   return budgetShell("budget-trends","Trends",html);
+}
+/* ---- Budget editing (v0.4.1) ---- */
+let budgetDraft=null;
+function budgetEditBar(){return `<div class="bd-editbar"><span class="sub">Monthly budgets</span><button class="bd-editbtn" onclick="openBudgetEdit()">${icon("pencil")} Edit budgets</button></div>`}
+function budgetDraftTotal(){return (budgetDraft||[]).reduce((n,r)=>n+(Number(r.budget)>0?Number(r.budget):0),0)}
+function budgetEditRowsHtml(){
+  const last=budgetDraft.length-1;
+  return budgetDraft.map((r,i)=>`<div class="bd-edit-row"><input class="form-input bd-edit-name" maxlength="60" aria-label="Category name" placeholder="Category name" value="${esc(r.name)}" oninput="budgetEditSet(${i},'name',this.value)"><label class="form-input bd-edit-amt"><span>£</span><input type="number" min="0" step="1" inputmode="decimal" aria-label="Monthly budget" placeholder="0" value="${esc(r.budget)}" oninput="budgetEditSet(${i},'budget',this.value)"></label><button class="bd-move" aria-label="Move up" onclick="budgetEditMove(${i},-1)"${i===0?" disabled":""}>${icon("chevron-up")}</button><button class="bd-move" aria-label="Move down" onclick="budgetEditMove(${i},1)"${i===last?" disabled":""}>${icon("chevron-down")}</button></div>`).join("");
+}
+function budgetEditHtml(){
+  return `<div class="modal-backdrop sheet-bg" id="budget-edit-modal"><div class="modal sheet todo-form bd-sheet" role="dialog" aria-modal="true" aria-labelledby="budget-edit-title"><div class="eyebrow">Budget</div><h2 id="budget-edit-title">Edit budgets</h2><p class="sub" style="margin:0 0 12px">Monthly amount per category. Use the arrows to reorder. Spend with no matching rule goes to “Other”.</p><div class="bd-sheet-list" id="budget-edit-list">${budgetEditRowsHtml()}<button class="bd-add" onclick="budgetEditAdd()">+ Add category</button></div><div class="bd-sheet-foot"><p class="form-error" id="budget-edit-error" role="alert" hidden></p><div class="bd-row" style="margin-bottom:10px"><span class="sub" style="font-size:14px;margin:0">Total monthly budget</span><b class="bd-edit-total" id="budget-edit-total">${gbp(budgetDraftTotal())}</b></div><div class="form-actions"><button class="secondary-button" onclick="closeBudgetEdit()">Cancel</button><button class="primary-button" id="budget-edit-save" onclick="saveBudgetEdit()">Save budgets</button></div></div></div></div>`;
+}
+function openBudgetEdit(){
+  if(!state.budget){toast("Budget isn't loaded yet");return}
+  budgetDraft=state.budget.categories.map(c=>({id:c.id,name:c.name,budget:c.budget>0?String(c.budget):""}));
+  closeBudgetEdit(true);
+  document.body.insertAdjacentHTML("beforeend",budgetEditHtml());
+}
+function closeBudgetEdit(keepDraft){byId("budget-edit-modal")?.remove();if(!keepDraft)budgetDraft=null}
+function budgetEditRefresh(){const el=byId("budget-edit-list");if(!el)return;const add=el.querySelector(".bd-add");el.querySelectorAll(".bd-edit-row").forEach(x=>x.remove());add.insertAdjacentHTML("beforebegin",budgetEditRowsHtml())}
+function budgetEditTotal(){const el=byId("budget-edit-total");if(el)el.textContent=gbp(budgetDraftTotal())}
+function budgetEditSet(i,key,value){if(!budgetDraft?.[i])return;budgetDraft[i][key]=value;if(key==="budget")budgetEditTotal()}
+function budgetEditMove(i,dir){const j=i+dir;if(!budgetDraft||j<0||j>=budgetDraft.length)return;[budgetDraft[i],budgetDraft[j]]=[budgetDraft[j],budgetDraft[i]];budgetEditRefresh()}
+function budgetEditAdd(){budgetDraft.push({id:null,name:"",budget:""});budgetEditRefresh();const rows=document.querySelectorAll("#budget-edit-list .bd-edit-row");const last=rows[rows.length-1];last?.scrollIntoView?.({block:"nearest"});last?.querySelector("input")?.focus()}
+function budgetEditError(message){const el=byId("budget-edit-error");if(el){el.textContent=message;el.hidden=false}}
+async function saveBudgetEdit(){
+  if(!budgetDraft)return;
+  const seen=new Set(),categories=[];
+  for(const r of budgetDraft){
+    const name=String(r.name||"").trim();
+    if(!name){budgetEditError("Every category needs a name");return}
+    if(seen.has(name.toLowerCase())){budgetEditError(`“${name}” is used twice`);return}
+    seen.add(name.toLowerCase());
+    const raw=String(r.budget??"").trim(),budget=raw===""?0:Number(raw);
+    if(!(budget>=0&&budget<=100000)){budgetEditError(`Check the budget for “${name}”`);return}
+    categories.push({id:r.id||undefined,name,budget});
+  }
+  const button=byId("budget-edit-save");
+  if(button){button.disabled=true;button.textContent="Saving…"}
+  try{
+    await api("/api/budget/categories",{method:"POST",body:JSON.stringify({categories})});
+    closeBudgetEdit();
+    invalidate("budget");
+    try{await load("budget",{force:true})}catch(e){}
+    toast("Budgets saved");
+    show(currentPage==="budget"?"budget":"budget-categories");
+  }catch(e){
+    if(button){button.disabled=false;button.textContent="Save budgets"}
+    budgetEditError(/not found|404/i.test(e?.message||"")?"Update your Worker to v0.4.1 to save budgets.":(e?.message||"Couldn't save the budgets"));
+  }
 }
 function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
 function errorScreen(e){return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}

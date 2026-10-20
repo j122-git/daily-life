@@ -449,7 +449,7 @@ details.notes-version[open] summary{margin-bottom:6px}
 textarea.form-input{min-height:120px;resize:vertical;line-height:1.45}
 
 /* Budget v0.4.0 */
-.m-budget{background:var(--lav);position:relative}
+.m-budget{background:var(--yellow);position:relative}
 .bd-badge{position:absolute;top:12px;right:12px;min-width:24px;height:24px;border-radius:12px;background:var(--red);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;padding:0 6px}
 .bd-card{padding:16px}
 .bd-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
@@ -498,3 +498,22 @@ textarea.form-input{min-height:120px;resize:vertical;line-height:1.45}
 .chip.falling{background:var(--green2);color:#0b5f4d}
 .chip.steady,.chip.na{background:#eee9df;color:#44545e}
 .bd-attn{padding:14px 16px;border-left:4px solid var(--red);cursor:pointer}
+
+/* Budget editing v0.4.1 */
+.bd-editbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.bd-editbar .sub{margin:0}
+.bd-editbtn{min-height:44px;padding:0 16px;border-radius:22px;background:var(--green2);color:#0b5f4d;font-size:14px;font-weight:700;display:inline-flex;align-items:center;gap:6px}
+.bd-editbtn .icon{width:18px;height:18px}
+.bd-sheet{display:flex;flex-direction:column;max-height:92vh;overflow:hidden;padding-bottom:0}
+.bd-sheet-list{flex:1;min-height:0;overflow:auto;padding-bottom:8px}
+.bd-sheet-foot{border-top:1px solid var(--line);padding:12px 0 calc(16px + env(safe-area-inset-bottom));background:var(--paper)}
+.bd-edit-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.bd-edit-name{flex:1;min-width:0}
+.bd-edit-amt{width:92px;flex:none;display:flex;align-items:center;gap:4px;padding:0 10px;min-height:48px}
+.bd-edit-amt:focus-within{border-color:var(--green);box-shadow:0 0 0 3px rgba(15,128,106,.10)}
+.bd-edit-amt span{color:var(--muted)}
+.bd-edit-amt input{width:100%;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:14px;color:var(--navy);padding:0}
+.bd-move{width:40px;height:48px;flex:none;border-radius:12px;background:#eee9df;color:var(--navy);display:grid;place-items:center;padding:0;font-size:20px}
+.bd-move:disabled{opacity:.35;cursor:default}
+.bd-add{width:100%;min-height:48px;border:1.5px dashed var(--green);border-radius:12px;background:transparent;color:var(--green);font-weight:700;font-size:14px}
+.bd-edit-total{font-family:Nunito,sans-serif;font-size:22px}
