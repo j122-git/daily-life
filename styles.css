@@ -517,3 +517,7 @@ textarea.form-input{min-height:120px;resize:vertical;line-height:1.45}
 .bd-move:disabled{opacity:.35;cursor:default}
 .bd-add{width:100%;min-height:48px;border:1.5px dashed var(--green);border-radius:12px;background:transparent;color:var(--green);font-weight:700;font-size:14px}
 .bd-edit-total{font-family:Nunito,sans-serif;font-size:22px}
+
+/* Budget roll-up v0.4.2 */
+.bd-rollup{font-size:12px;line-height:1.5;color:var(--muted);margin:14px 2px 0}
+.bd-rollup.warn{background:#f7e1de;color:var(--red);font-weight:700;padding:10px 12px;border-radius:12px;margin:14px 0 0}

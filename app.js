@@ -871,6 +871,18 @@ function sparkline(series,color){
   const last=pts[pts.length-1];
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3" fill="${color}"/></svg>`;
 }
+function monthYear(key){const [y,m]=key.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"})}
+function budgetRollupNote(){
+  const r=state.budget?.rollup;if(!r)return"";
+  const pending=r.pendingMonths||[],day=state.budget.dayOfMonth;
+  let text=r.historyUpTo?`History up to ${monthYear(r.historyUpTo)}`:"No history yet. The first roll-up runs on the 2nd.",cls="";
+  if(pending.length&&day>=3){
+    const list=pending.map(monthYear).join(", "),verb=pending.length===1?"is":"are";
+    cls=" warn";
+    text=r.needsOther?`${list} can't be rolled up yet. Add a category called Other so spend with no merchant rule can be counted.`:day>=10?`${list} couldn't be rolled up. Check the Worker's logs in Cloudflare.`:`${list} ${verb} waiting to be rolled up. It is retried on the 9th.`;
+  }
+  return `<p class="bd-rollup${cls}">${esc(text)}</p>`;
+}
 function budgetTrends(){
   const gate=budgetGate();if(gate)return budgetShell("budget-trends","Trends",gate);
   const b=state.budget,tr=b.trends,months=tr.months,budget=b.totals.budget;
@@ -893,6 +905,7 @@ function budgetTrends(){
     }).join("");
     html+=`<div class="card bd-card" style="padding-top:0;padding-bottom:0;margin-top:8px">${rows}</div>`;
   }
+  html+=budgetRollupNote();
   return budgetShell("budget-trends","Trends",html);
 }
 /* ---- Budget editing (v0.4.1) ---- */
