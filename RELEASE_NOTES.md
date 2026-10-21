@@ -1,3 +1,40 @@
+# Daily Life v0.4.2
+
+_21 October 2026_
+
+## New: automatic monthly roll-up
+
+- Raw transactions are kept for the **current and previous month** only. Every older month is totalled per category into **Budget history** and then removed from **Transactions**, so Trends keep growing without filling Airtable's record limit.
+- Runs by itself on a Cloudflare cron trigger: the **2nd of each month at 03:00 UTC**, with a retry on the **9th**. There is no button in the app.
+- Totals use the same rules as the live figures: transfers and card payments excluded, Exclude ticked rows ignored, overrides then Merchant rules then Other.
+- Safe to repeat. Each month is written to Budget history first as **pending** rows (Month shown as `2026-07*`, ignored by the app), then its transactions are deleted, then the pending rows become the real ones (`2026-07`). If a run stops part-way, the next run finishes the job. Rows that turn up late for a month that was already rolled up are added to that month's totals.
+- Requests are paced (about 4 a second) to stay inside Airtable's rate limit.
+- A month is **skipped and left untouched** if some of its spend can't be categorised because there is no category called **Other**.
+- **Trends** shows a status line at the bottom: "History up to September 2026". If a month is waiting, it turns into a warning that says why.
+
+## Worker
+
+- New `scheduled` handler (the cron trigger) and the roll-up logic. Nothing new to call from the app.
+- `/api/budget` also returns `rollup` (history up to, months waiting, whether Other is missing).
+- Cost: about 5 Airtable calls plus 1 per 10 transactions deleted, once a month (about 30 for 250 rows). A month with nothing due costs 1 call.
+- The live figures and the roll-up now share one categorisation function, so they can't drift apart.
+
+## User action
+
+- Deploy the new `worker.js`.
+- In Cloudflare: your Worker > **Settings** > **Triggers** > **Cron Triggers** > add `0 3 2,9 * *`.
+- Your Airtable token needs permission to **delete records** (data.records:write covers it).
+- **The first run deletes every transaction older than last month**, after totalling it into Budget history. Check that you don't need those rows first.
+
+## If a month needs review
+
+- If a delete stops half-way, the next run leaves that month alone (it logs "needs review") rather than guess, and Trends shows a warning after the 9th. Nothing is lost: the pending rows hold the full totals. To fix: in Budget history, edit each `2026-07*` Month to `2026-07`, then delete the leftover July rows in Transactions.
+
+## Notes
+
+- No Airtable schema changes. `navigation.js` and `icons.js` unchanged from v0.4.1.
+- Files changed: `worker.js`, `app.js`, `styles.css`.
+
 # Daily Life v0.4.1
 
 _19 October 2026_
