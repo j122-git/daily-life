@@ -71,8 +71,8 @@ function overdueLabel(due){
   return `${n} day${n===1?"":"s"} overdue`;
 }
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:26px;color:var(--green)">${icon("soup")}</div>`}
-function nav(a){return `<nav class="bottom"><button class="nav ${a==="home"?"active":""}" onclick="show('home')"><span class="ni">${icon("house")}</span>Home</button><button class="nav ${a==="meals"?"active":""}" onclick="show('meals')"><span class="ni">${icon("utensils")}</span>Meals</button><button class="nav ${a==="planner"?"active":""}" onclick="show('planner')"><span class="ni">${icon("clipboard-list")}</span>Planner</button><button class="nav ${a==="budget"?"active":""}" onclick="show('budget')"><span class="ni">${icon("wallet")}</span>Budget</button><button class="nav ${a==="settings"?"active":""}" onclick="show('settings')"><span class="ni">${icon("ellipsis")}</span>More</button></nav>`}
-function header(title="",back=false,backTo="home",cog=false){return `<header class="header">${back?`<button class="back" onclick="show('${backTo}')" aria-label="Back">${icon("chevron-left")}</button>`:`<div class="logo">Daily Life</div>`}<h1 class="screen-title">${back?esc(title):""}</h1>${cog?`<button class="avatar" onclick="show('settings')" aria-label="Settings" title="Settings">${icon("settings")}</button>`:""}</header>`}
+function nav(a){const tabs=[["home","house","Home"],["meals","utensils","Meals"],["planner","clipboard-list","Planner"],["budget","wallet","Budget"],["settings","ellipsis","More"]];return `<nav class="bottom" aria-label="Main">${tabs.map(([p,i,l])=>`<button class="nav ${a===p?"active":""}"${a===p?' aria-current="page"':""} onclick="show('${p}')"><span class="ni">${icon(i)}</span>${l}</button>`).join("")}</nav>`}
+function header(cog=false){return `<header class="header"><div class="logo">Daily Life</div>${cog?`<button class="avatar" onclick="show('settings')" aria-label="Settings" title="Settings">${icon("settings")}</button>`:""}</header>`}
 async function load(kind,{force=false,background=false}={}){
   const meta=cacheMeta[kind];
   if(!force&&meta.loaded){if(!isFresh(kind)&&!meta.promise)meta.promise=load(kind,{force:true,background:true}).finally(()=>meta.promise=null);return state}
@@ -130,6 +130,18 @@ function connectionModal(success,title,message){
   </div>`
 }
 
+function connectionFailed(e){
+  removeAppToken();
+  const unauthorised=/unauthorised|unauthorized|401/i.test(e?.message||"");
+  return connectionModal(
+    false,
+    unauthorised?"Token not recognised":"Could not connect",
+    unauthorised
+      ?"The app token was rejected. Check the token and try again."
+      :"We couldn't reach the Daily Life server. Check your Worker URL and connection, then try again."
+  );
+}
+
 function closeConnectionModal(){
   document.getElementById("connection-modal")?.remove();
 }
@@ -162,18 +174,7 @@ async function testConnection(){
       )
     );
   }catch(e){
-    removeAppToken();
-
-    const unauthorised=/unauthorised|unauthorized|401/i.test(e?.message||"");
-    document.body.insertAdjacentHTML("beforeend",
-      connectionModal(
-        false,
-        unauthorised ? "Token not recognised" : "Could not connect",
-        unauthorised
-          ? "The app token was rejected. Check the token and try again."
-          : "We couldn't reach the Daily Life server. Check your Worker URL and connection, then try again."
-      )
-    );
+    document.body.insertAdjacentHTML("beforeend",connectionFailed(e));
   }finally{
     if(button){
       button.disabled=false;
@@ -199,19 +200,7 @@ async function saveAndConnect(){
     await show("home");
     toast("Connected");
   }catch(e){
-    removeAppToken();
-
-    const unauthorised=/unauthorised|unauthorized|401/i.test(e?.message||"");
-    document.getElementById("app").insertAdjacentHTML(
-      "beforeend",
-      connectionModal(
-        false,
-        unauthorised ? "Token not recognised" : "Could not connect",
-        unauthorised
-          ? "The app token was rejected. Check the token and try again."
-          : "We couldn't reach the Daily Life server. Check your Worker URL and connection, then try again."
-      )
-    );
+    document.body.insertAdjacentHTML("beforeend",connectionFailed(e));
   }
 }
 
@@ -309,8 +298,8 @@ function planCountText(){
   return n?`${n} planned this week`:"Nothing planned yet";
 }
 function planItem(m){
-  const r=recipeFor(m),name=r?.name||m.recipeName||"Recipe",id=esc(m.id);
-  return `<div class="plan-item${m.cooked?" cooked":""}"><button class="plan-tick${m.cooked?" ticked":""}" aria-label="Mark as cooked" aria-pressed="${!!m.cooked}" onclick="toggleCooked('${id}',this)"><span class="tick-circle"></span></button><div class="plan-main"${r?` onclick="show('recipe','${esc(r.id)}')"`:""}><div class="plan-title">${esc(name)}</div>${m.servings?`<div class="sub">${esc(m.servings)} servings</div>`:""}</div><button class="plan-more" aria-label="Edit meal" onclick="openPlanForm({id:'${id}'})">${icon("ellipsis")}</button></div>`;
+  const r=recipeFor(m),name=r?.name||"Recipe",id=esc(m.id);
+  return `<div class="plan-item${m.cooked?" cooked":""}"><button class="plan-tick${m.cooked?" ticked":""}" aria-label="Mark as cooked" aria-pressed="${!!m.cooked}" onclick="toggleCooked('${id}',this)"><span class="tick-circle"></span></button><div class="plan-main"${r?` role="button" tabindex="0" onclick="show('recipe','${esc(r.id)}')"`:""}><div class="plan-title">${esc(name)}</div>${m.servings?`<div class="sub">${esc(m.servings)} servings</div>`:""}</div><button class="plan-more" aria-label="Edit meal" onclick="openPlanForm({id:'${id}'})">${icon("ellipsis")}</button></div>`;
 }
 function plan(){
   if(!planWeek)planWeek=weekStartOf();
@@ -417,13 +406,13 @@ function todayMealsHtml(){
   const order=["breakfast","lunch","dinner"];
   const rank=m=>{const i=order.indexOf(String(slotOf(m)||"").toLowerCase());return i<0?99:i};
   const rows=state.mealPlan.filter(m=>m.date===today()).sort((a,b)=>rank(a)-rank(b)).map(m=>{
-    const r=recipeFor(m),title=r?.name||m.recipeName;
-    if(!title)return"";
-    return `<div class="card row"${r?` onclick="show('recipe','${esc(r.id)}')"`:""}>${r?img(r):""}<div class="grow"><div class="eyebrow">${esc(slotOf(m)||m.meal||"Meal")}</div><div class="title">${esc(title)}</div></div>${r?`<div class="chev">${icon("chevron-right")}</div>`:""}</div>`;
+    const r=recipeFor(m);
+    if(!r?.name)return"";
+    return `<div class="card row" role="button" tabindex="0" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="eyebrow">${esc(slotOf(m)||m.meal||"Meal")}</div><div class="title">${esc(r.name)}</div></div><div class="chev">${icon("chevron-right")}</div></div>`;
   }).join("");
   return rows||`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`;
 }
-function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&t.status!=="Done").slice(0,3),ec=eventsUpcoming(7).length,openTasks=state.todos.filter(t=>t.status!=="Done").length,period=dayPeriod();return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('planner')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">Planner</div><div class="module-sub">${openTasks} task${openTasks===1?"":"s"} · ${ec} event${ec===1?"":"s"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="openDocuments()"><div class="ico">${icon("folder")}</div><div class="module-title">Documents</div><div class="module-sub">Open in Drive<span class="chev">${icon("external-link")}</span></div></button><button class="module m-budget" onclick="show('budget')">${budgetBadge()}<div class="ico">${icon("wallet")}</div><div class="module-title">Budget</div><div class="module-sub">${esc(budgetTileSub())}<span class="chev">${icon("chevron-right")}</span></div></button></div>${budgetAttentionHtml()}<div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
+function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&isOpen(t)).slice(0,3),ec=eventsUpcoming(7).length,openTasks=state.todos.filter(isOpen).length,period=dayPeriod();return `<div class="shell">${header(true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('planner')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">Planner</div><div class="module-sub">${openTasks} task${openTasks===1?"":"s"} · ${ec} event${ec===1?"":"s"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="openDocuments()"><div class="ico">${icon("folder")}</div><div class="module-title">Documents</div><div class="module-sub">Open in Drive<span class="chev">${icon("external-link")}</span></div></button><button class="module m-budget" onclick="show('budget')">${budgetBadge()}<div class="ico">${icon("wallet")}</div><div class="module-title">Budget</div><div class="module-sub">${esc(budgetTileSub())}<span class="chev">${icon("chevron-right")}</span></div></button></div>${budgetAttentionHtml()}<div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
 function cookTime(v){if(v===null||v===undefined||v==="")return"";return typeof v==="number"?`${v} min`:String(v)}
 function meals(){
   const n=cacheMeta.recipes.loaded?state.recipes.length:0;
@@ -445,7 +434,7 @@ function openDocuments(){
   toast("Loading the link, tap again in a moment");loadLinks();
 }
 function planner(){
-  const open=state.todos.filter(t=>t.status!=="Done").length,ec=eventsUpcoming(7).length;
+  const open=state.todos.filter(isOpen).length,ec=eventsUpcoming(7).length;
   const todoSub=cacheMeta.todos.loaded?`${open} task${open===1?"":"s"}`:"Tasks and chores";
   const eventsSub=cacheMeta.events.loaded?`${ec} this week`:"What's on";
   return `<div class="shell">${header()}<main class="page"><h1 class="screen-title page-title">Planner</h1><div class="modules"><button class="module m-todo" onclick="show('todo')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">To do</div><div class="module-sub">${todoSub}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('events')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Events</div><div class="module-sub">${eventsSub}<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("planner")}</div>`;
@@ -649,7 +638,7 @@ function recipeFilters(){
 function recipePillsHtml(){
   const filters=recipeFilters();
   if(!filters.includes(recipeFilter))recipeFilter="All";
-  return filters.map(f=>`<button class="pill${recipeFilter===f?" active":""}" data-f="${esc(f)}" onclick="recipeFilterSet(this.dataset.f)">${esc(f)}</button>`).join("");
+  return filters.map(f=>`<button class="pill${recipeFilter===f?" active":""}" aria-pressed="${recipeFilter===f}" data-f="${esc(f)}" onclick="recipeFilterSet(this.dataset.f)">${esc(f)}</button>`).join("");
 }
 function recipeMatches(r){
   if(recipeFilter==="Quick"){const t=Number(r.cookingTime);if(!(t>0&&t<=30))return false}
@@ -664,7 +653,7 @@ function recipeListHtml(){
   const list=state.recipes.filter(recipeMatches);
   if(!state.recipes.length)return'<div class="empty">No recipes found.</div>';
   if(!list.length)return'<div class="empty">No recipes match your search.</div>';
-  return list.map(r=>`<div class="card row" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${[r.cuisine,cookTime(r.cookingTime),r.servings?`${r.servings} servings`:""].filter(Boolean).map(esc).join(" · ")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("");
+  return list.map(r=>`<div class="card row" role="button" tabindex="0" onclick="show('recipe','${esc(r.id)}')">${img(r)}<div class="grow"><div class="title">${esc(r.name)}</div><div class="sub">${[r.cuisine,cookTime(r.cookingTime),r.servings?`${r.servings} servings`:""].filter(Boolean).map(esc).join(" · ")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("");
 }
 function refreshRecipeList(){
   const list=byId("recipe-list");if(list)list.innerHTML=recipeListHtml();
@@ -704,15 +693,12 @@ function todoStatusClass(status){
   const v=String(status||"To do").toLowerCase();
   return v.includes("done")?"done":v.includes("progress")?"progress":"todo";
 }
+function isOpen(t){return todoStatusClass(t.status)!=="done"}
 function nextTodoStatus(status){
   const v=String(status||"To do").toLowerCase();
   if(v.includes("done")) return "To do";
   if(v.includes("progress")) return "Done";
   return "In progress";
-}
-function statusLabel(status){
-  const c=todoStatusClass(status);
-  return c==="done"?"Done":c==="progress"?"In progress":"To do";
 }
 function filteredTodos(){
   let ts=[...state.todos];
@@ -758,10 +744,20 @@ async function saveTodo(id){
   const category=document.getElementById("todo-category")?.value||null;
   const status=document.getElementById("todo-status")?.value||"To do";
   if(!task){toast("Enter a task");return}
-  try{
-    const body={task,due:todoDate(due),category,status};
-    if(id){const i=state.todos.findIndex(x=>x.id===id);if(i>=0)state.todos[i]={...state.todos[i],...body,bucket:bucket({...state.todos[i],...body})};closeTodoForm();toast("Task updated");show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify(body)});markLoaded("todos")}catch(e){await load("todos",{force:true});show("todo");toast("Couldn't save task: "+e.message)}}else{try{const d=await api("/api/todos",{method:"POST",body:JSON.stringify(body)});if(d?.todo)state.todos.unshift({...d.todo,bucket:bucket(d.todo)});else invalidate("todos");closeTodoForm();toast("Task added");show("todo")}catch(e){toast("Couldn't save task: "+e.message)}}
-  }catch(e){toast("Couldn't save task: "+e.message)}
+  const body={task,due:todoDate(due),category,status};
+  if(id){
+    const i=state.todos.findIndex(x=>x.id===id);
+    if(i>=0)state.todos[i]={...state.todos[i],...body,bucket:bucket({...state.todos[i],...body})};
+    closeTodoForm();toast("Task updated");show("todo");
+    try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify(body)});markLoaded("todos")}
+    catch(e){await load("todos",{force:true});show("todo");toast("Couldn't save task: "+e.message)}
+  }else{
+    try{
+      const d=await api("/api/todos",{method:"POST",body:JSON.stringify(body)});
+      if(d?.todo)state.todos.unshift({...d.todo,bucket:bucket(d.todo)});else invalidate("todos");
+      closeTodoForm();toast("Task added");show("todo");
+    }catch(e){toast("Couldn't save task: "+e.message)}
+  }
 }
 function todo(){
   const ts=filteredTodos();
@@ -785,7 +781,7 @@ function todo(){
         <button class="chev" onclick="editTodo('${esc(t.id)}')" aria-label="Edit task">${icon("chevron-right")}</button></div>`;
     }
   }
-  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Planner",page:"planner"},{label:"To do"}])}<div class="title-row"><h1 class="screen-title page-title">To do</h1><button class="plus" onclick="openTodoForm()" aria-label="Add task">${icon("plus")}</button></div><div class="filterbar">${["All","Overdue","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first "+icon("arrow-down"):"Oldest first "+icon("arrow-up")}</button></div>${sections||'<div class="empty">No tasks found.</div>'}</main>${nav("planner")}</div>`;
+  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Planner",page:"planner"},{label:"To do"}])}<div class="title-row"><h1 class="screen-title page-title">To do</h1><button class="plus" onclick="openTodoForm()" aria-label="Add task">${icon("plus")}</button></div><div class="filterbar">${["All","Overdue","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" aria-pressed="${todoFilter===x}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first "+icon("arrow-down"):"Oldest first "+icon("arrow-up")}</button></div>${sections||'<div class="empty">No tasks found.</div>'}</main>${nav("planner")}</div>`;
 }
 function editTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;openTodoForm(t);load("todo-options")}
 async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;const previous=t.status,status=nextTodoStatus(previous);t.status=status;t.bucket=bucket(t);show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})});markLoaded("todos")}catch(e){t.status=previous;t.bucket=bucket(t);show("todo");toast("Couldn't update task: "+e.message)}}
@@ -815,10 +811,10 @@ function budgetTileSub(){
 function budgetAttentionHtml(){
   const a=state.budget?.alerts;if(!a||!a.count)return"";
   const more=a.count-1;
-  return `<div class="section-head"><h2>Needs attention</h2></div><div class="card bd-attn" onclick="show('budget')"><div class="title" style="font-weight:500">${budgetAlertText(a.items[0])}</div>${more?`<div class="sub">${more} more alert${more===1?"":"s"} in Budget</div>`:""}</div>`;
+  return `<div class="section-head"><h2>Needs attention</h2></div><div class="card bd-attn" role="button" tabindex="0" onclick="show('budget')"><div class="title" style="font-weight:500">${budgetAlertText(a.items[0])}</div>${more?`<div class="sub">${more} more alert${more===1?"":"s"} in Budget</div>`:""}</div>`;
 }
 function budgetTabs(active){
-  return `<div class="filterbar">${[["budget","Overview"],["budget-categories","Categories"],["budget-trends","Trends"]].map(([p,l])=>`<button class="pill${p===active?" active":""}" onclick="show('${p}')">${l}</button>`).join("")}</div>`;
+  return `<div class="filterbar">${[["budget","Overview"],["budget-categories","Categories"],["budget-trends","Trends"]].map(([p,l])=>`<button class="pill${p===active?" active":""}"${p===active?' aria-current="page"':""} onclick="show('${p}')">${l}</button>`).join("")}</div>`;
 }
 function budgetShell(page,label,inner){
   return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Budget",page:"budget"},{label}])}<h1 class="screen-title page-title">Budget</h1>${budgetTabs(page)}${inner}</main>${nav("budget")}</div>`;
@@ -958,33 +954,33 @@ async function saveBudgetEdit(){
     budgetEditError(/not found|404/i.test(e?.message||"")?"Update your Worker to v0.4.1 to save budgets.":(e?.message||"Couldn't save the budgets"));
   }
 }
-function toast(s){const x=document.createElement("div");x.className="toast";x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
-function errorScreen(e){return `<div class="shell">${header("",false,"home",true)}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
+function toast(s){const x=document.createElement("div");x.className="toast";x.setAttribute("role","status");x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
+const MODAL_CLOSE={"connection-modal":closeConnectionModal,"plan-form-modal":closePlanForm,"todo-form-modal":closeTodoForm,"import-modal":closeImport,"budget-edit-modal":closeBudgetEdit};
+let pressedBackdrop=false; // a drag that starts inside a form and ends outside must not close it
+document.addEventListener("pointerdown",e=>{pressedBackdrop=!!e.target.classList?.contains("modal-backdrop")});
+document.addEventListener("click",e=>{if(pressedBackdrop&&e.target.classList?.contains("modal-backdrop"))MODAL_CLOSE[e.target.id]?.()});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape")MODAL_CLOSE[[...document.querySelectorAll(".modal-backdrop")].pop()?.id]?.();
+  else if((e.key==="Enter"||e.key===" ")&&e.target.matches?.('[role="button"]')){e.preventDefault();e.target.click()}
+});
+function errorScreen(e){return `<div class="shell">${header(true)}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
+// Data each screen needs: loaded first if missing, then refreshed in the background.
+const SCREEN_DATA={home:["recipes","todos","mealPlan","events","budget"],plan:["recipes","mealPlan"],planner:["todos","events"],recipes:["recipes"],todo:["todos"],events:["events"],budget:["budget"],"budget-categories":["budget"],"budget-trends":["budget"]};
+// Shown at once; refreshed in the background only if already loaded.
+const SOFT_DATA={meals:["recipes"],recipe:["recipes"]};
+const SCREENS={home,recipes,events,meals,plan,planner,settings,usage:usageScreen,"release-notes":releaseNotesScreen,budget:budgetOverview,"budget-categories":budgetCategories,"budget-trends":budgetTrends};
 async function show(page,id){
   scrollTo(0,0);currentPage=page;const app=document.getElementById("app");
   try{
-    if(page==="token"){app.innerHTML=tokenScreen();return}
-    if(!hasAppToken()){app.innerHTML=tokenScreen();return}
-    if(page==="home"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await all()}
-    else if(page==="plan"&&!(cacheMeta.mealPlan.loaded&&cacheMeta.recipes.loaded)){app.innerHTML='<div class="shell loading">Loading…</div>';await Promise.all([load("recipes"),load("mealPlan")])}
-    else if(page==="planner"&&!(cacheMeta.todos.loaded&&cacheMeta.events.loaded)){app.innerHTML='<div class="shell loading">Loading…</div>';await Promise.all([load("todos"),load("events")])}
-    else if(page==="recipes"&&!cacheMeta.recipes.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("recipes")}
-    else if(page==="todo"&&!cacheMeta.todos.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("todos")}
-    else if(page==="events"&&!cacheMeta.events.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("events")}
-    else if(page.startsWith("budget")&&!cacheMeta.budget.loaded){app.innerHTML='<div class="shell loading">Loading…</div>';await load("budget")}
-    let h;if(page==="home")h=home();else if(page==="recipes")h=recipes();else if(page==="recipe")h=await recipe(id);else if(page==="events")h=events();else if(page==="meals")h=meals();else if(page==="plan")h=plan();else if(page==="planner")h=planner();else if(page==="settings")h=settings();else if(page==="usage")h=usageScreen();else if(page==="release-notes")h=releaseNotesScreen();else if(page==="budget")h=budgetOverview();else if(page==="budget-categories")h=budgetCategories();else if(page==="budget-trends")h=budgetTrends();else h=todo();
-    app.innerHTML=h;
-    if(page==="usage")loadUsage();
+    if(page==="token"||!hasAppToken()){app.innerHTML=tokenScreen();return}
+    const need=SCREEN_DATA[page]||[];
+    if(need.some(k=>!cacheMeta[k].loaded)){app.innerHTML='<div class="shell loading">Loading…</div>';await Promise.all(need.map(k=>load(k)))}
+    app.innerHTML=page==="recipe"?await recipe(id):(SCREENS[page]||todo)();
     if(page==="home")loadLinks();
-    if(page==="planner")refreshDataInBackground(["todos","events"]);
+    if(page==="usage"||page==="settings"&&!apiUsage)loadUsage();
     if(page==="release-notes"||page==="settings"&&!releaseNotes)loadReleaseNotes();
-    if(page==="settings"&&!apiUsage)loadUsage();
-    if(page==="home")refreshDataInBackground(["recipes","todos","mealPlan","events","budget"]);
-    if(page==="meals"||page==="recipes"||page==="recipe")refreshDataInBackground(["recipes"]);
-    if(page==="todo"){refreshDataInBackground(["todos"]);if(!cacheMeta["todo-options"].loaded)load("todo-options",{background:true})}
-    if(page==="events")refreshDataInBackground(["events"]);
-    if(page.startsWith("budget"))refreshDataInBackground(["budget"]);
-    if(page==="plan")refreshDataInBackground(["mealPlan","recipes"]);
+    if(page==="todo"&&!cacheMeta["todo-options"].loaded)load("todo-options",{background:true});
+    refreshDataInBackground(need.length?need:SOFT_DATA[page]||[]);
   }catch(e){console.error(e);app.innerHTML=errorScreen(e)}
 }
 if(!window.location.hash)show("home");
