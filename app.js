@@ -71,7 +71,7 @@ function overdueLabel(due){
   return `${n} day${n===1?"":"s"} overdue`;
 }
 function img(r,cls="thumb"){return r.image?`<img class="${cls}" src="${esc(r.image)}" alt="" loading="lazy">`:`<div class="${cls}" style="display:grid;place-items:center;font-size:26px;color:var(--green)">${icon("soup")}</div>`}
-function nav(a){const tabs=[["home","house","Home"],["meals","utensils","Meals"],["planner","clipboard-list","Planner"],["budget","wallet","Budget"],["settings","ellipsis","More"]];return `<nav class="bottom" aria-label="Main">${tabs.map(([p,i,l])=>`<button class="nav ${a===p?"active":""}"${a===p?' aria-current="page"':""} onclick="show('${p}')"><span class="ni">${icon(i)}</span>${l}</button>`).join("")}</nav>`}
+function nav(a){const tabs=[["home","house","Home"],["meals","utensils","Meals"],["planner","clipboard-list","Planner"],["budget","wallet","Budget"],["settings","ellipsis","More"]];return `<nav class="bottom" aria-label="Main"><div class="rail-logo">Daily Life</div>${tabs.map(([p,i,l])=>`<button class="nav ${a===p?"active":""}"${a===p?' aria-current="page"':""} onclick="show('${p}')"><span class="ni">${icon(i)}</span>${l}</button>`).join("")}<button class="nav rail-docs" onclick="openDocuments()"><span class="ni">${icon("folder")}</span>Documents<span class="rail-ext">${icon("external-link")}</span></button></nav>`}
 function header(cog=false){return `<header class="header"><div class="logo">Daily Life</div>${cog?`<button class="avatar" onclick="show('settings')" aria-label="Settings" title="Settings">${icon("settings")}</button>`:""}</header>`}
 async function load(kind,{force=false,background=false}={}){
   const meta=cacheMeta[kind];
@@ -318,6 +318,7 @@ function plan(){
 }
 // Re-render the plan screen in place, keeping the scroll position.
 function rerenderPlan(){
+  if(currentPage==="planner"){rerenderCal();return}
   if(currentPage!=="plan")return;
   const y=window.scrollY||0;byId("app").innerHTML=plan();scrollTo(0,y);
 }
@@ -412,7 +413,7 @@ function todayMealsHtml(){
   }).join("");
   return rows||`<div class="card" style="padding:18px"><div class="sub">Nothing planned for today.</div></div>`;
 }
-function home(){const ts=state.todos.filter(t=>t.bucket==="today"&&isOpen(t)).slice(0,3),ec=eventsUpcoming(7).length,openTasks=state.todos.filter(isOpen).length,period=dayPeriod();return `<div class="shell">${header(true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('planner')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">Planner</div><div class="module-sub">${openTasks} task${openTasks===1?"":"s"} · ${ec} event${ec===1?"":"s"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="openDocuments()"><div class="ico">${icon("folder")}</div><div class="module-title">Documents</div><div class="module-sub">Open in Drive<span class="chev">${icon("external-link")}</span></div></button><button class="module m-budget" onclick="show('budget')">${budgetBadge()}<div class="ico">${icon("wallet")}</div><div class="module-title">Budget</div><div class="module-sub">${esc(budgetTileSub())}<span class="chev">${icon("chevron-right")}</span></div></button></div>${budgetAttentionHtml()}<div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
+function home(){if(isTablet())return dashboard();const ts=state.todos.filter(t=>t.bucket==="today"&&isOpen(t)).slice(0,3),ec=eventsUpcoming(7).length,openTasks=state.todos.filter(isOpen).length,period=dayPeriod();return `<div class="shell">${header(true)}<main class="page"><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div><div class="modules"><button class="module m-meal" onclick="show('meals')"><div class="ico">${icon("utensils")}</div><div class="module-title">Meals</div><div class="module-sub">Recipes and meal plan<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-todo" onclick="show('planner')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">Planner</div><div class="module-sub">${openTasks} task${openTasks===1?"":"s"} · ${ec} event${ec===1?"":"s"}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-family" onclick="openDocuments()"><div class="ico">${icon("folder")}</div><div class="module-title">Documents</div><div class="module-sub">Open in Drive<span class="chev">${icon("external-link")}</span></div></button><button class="module m-budget" onclick="show('budget')">${budgetBadge()}<div class="ico">${icon("wallet")}</div><div class="module-title">Budget</div><div class="module-sub">${esc(budgetTileSub())}<span class="chev">${icon("chevron-right")}</span></div></button></div>${budgetAttentionHtml()}<div class="section-head"><h2>Today</h2><span class="eyebrow">${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</span></div>${todayMealsHtml()}${ts.map(t=>`<div class="card row" onclick="show('todo')"><button class="check" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title">${esc(t.task)}</div><div class="sub">${esc(t.category||"")}</div></div><div class="chev">${icon("chevron-right")}</div></div>`).join("")}</main>${nav("home")}</div>`}
 function cookTime(v){if(v===null||v===undefined||v==="")return"";return typeof v==="number"?`${v} min`:String(v)}
 function meals(){
   const n=cacheMeta.recipes.loaded?state.recipes.length:0;
@@ -432,12 +433,6 @@ function openDocuments(){
   if(familyLinks&&!familyLinks.error){toast("Documents link isn't set up yet. Add FAMILY_DRIVE_URL in Cloudflare.");return}
   if(familyLinks?.error){toast("Couldn't load the link. Update the Worker to v0.3.6.");familyLinks=null;return}
   toast("Loading the link, tap again in a moment");loadLinks();
-}
-function planner(){
-  const open=state.todos.filter(isOpen).length,ec=eventsUpcoming(7).length;
-  const todoSub=cacheMeta.todos.loaded?`${open} task${open===1?"":"s"}`:"Tasks and chores";
-  const eventsSub=cacheMeta.events.loaded?`${ec} this week`:"What's on";
-  return `<div class="shell">${header()}<main class="page"><h1 class="screen-title page-title">Planner</h1><div class="modules"><button class="module m-todo" onclick="show('todo')"><div class="ico">${icon("clipboard-list")}</div><div class="module-title">To do</div><div class="module-sub">${todoSub}<span class="chev">${icon("chevron-right")}</span></div></button><button class="module m-events" onclick="show('events')"><div class="ico">${icon("calendar-days")}</div><div class="module-title">Events</div><div class="module-sub">${eventsSub}<span class="chev">${icon("chevron-right")}</span></div></button></div></main>${nav("planner")}</div>`;
 }
 /* ---- Settings (v0.3.4) ---- */
 let apiUsage=null,releaseNotes=null;
@@ -683,6 +678,7 @@ function renderRecipe(r){
   const staleWorker=rawIng.some(isRecId);
   const steps=methodSteps(r.recipeText);
   const t=ticksFor(r.id);
+  if(isTablet())return cookView(r,ing,steps,t);
   const reset=`<button class="link" onclick="resetTicks('${esc(r.id)}')">Reset ticks</button>`;
   const source=/^https?:\/\//i.test(r.sourceUrl||"")?`<a class="link source-link" href="${esc(r.sourceUrl)}" target="_blank" rel="noopener noreferrer">${icon("external-link")} View original recipe</a>`:"";
   return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Meals",page:"meals"},{label:"Recipes",page:"recipes"}])}<article class="hero">${r.image?`<img class="hero-img" src="${esc(r.image)}" alt="">`:`<div class="hero-img" style="display:grid;place-items:center;font-size:70px;color:var(--green)">${icon("soup","icon-thin")}</div>`}<div class="recipe-body"><h1>${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>${icon("clock")} ${esc(cookTime(r.cookingTime))}</span>`:""}${r.servings?`<span>${icon("users")} ${esc(r.servings)} servings</span>`:""}${r.difficulty?`<span>${icon("chef-hat")} ${esc(r.difficulty)}</span>`:""}</div>${r.notes?`<p class="desc">${esc(r.notes)}</p>`:""}${source}${ing.length?`<div class="section-row"><h3>Ingredients</h3>${reset}</div>${ing.map((x,i)=>tickRow(r.id,"i",i,typeof x==="string"?x:(x.text||x.name||""),t.i.has(i))).join("")}`:""}${steps.length?`<div class="section-row"><h3>Method</h3>${ing.length?"":reset}</div>${steps.map((x,i)=>tickRow(r.id,"s",i,x,t.s.has(i))).join("")}`:""}${staleWorker?`<p class="desc">Ingredient names aren't available yet: the Worker needs updating to the latest version.</p>`:!ing.length&&!steps.length?`<p class="desc">No ingredients or method saved for this recipe yet.</p>`:""}<button class="action-btn m-meal" onclick="openPlanForm({recipeId:'${esc(r.id)}'})">${icon("calendar-plus")} Add to meal plan</button></div></article></main></div>`}
@@ -721,8 +717,8 @@ function todoForm(t=null){
   const status=t?.status||"To do";
   return `<div class="modal-backdrop" id="todo-form-modal">
     <div class="modal todo-form" role="dialog" aria-modal="true" aria-labelledby="todo-form-title">
-      <div class="eyebrow">${t?"Edit task":"New task"}</div>
-      <h2 id="todo-form-title">${t?"Edit to do":"Add a to do"}</h2>
+      <div class="eyebrow">${t?.id?"Edit task":"New task"}</div>
+      <h2 id="todo-form-title">${t?.id?"Edit to do":"Add a to do"}</h2>
       <label class="form-label" for="todo-task">Task</label>
       <input class="form-input" id="todo-task" maxlength="200" value="${esc(t?.task||"")}" placeholder="What needs doing?">
       <label class="form-label" for="todo-due">Due date</label>
@@ -731,13 +727,14 @@ function todoForm(t=null){
       <select class="form-input" id="todo-category"><option value="">No category</option>${cats.map(c=>`<option value="${esc(c)}" ${c===category?"selected":""}>${esc(c)}</option>`).join("")}</select>
       <label class="form-label" for="todo-status">Status</label>
       <select class="form-input" id="todo-status">${statuses.map(x=>`<option value="${esc(x)}" ${String(x).toLowerCase()===String(status).toLowerCase()?"selected":""}>${esc(x)}</option>`).join("")}</select>
-      <div class="form-actions"><button class="secondary-button" onclick="closeTodoForm()">Cancel</button><button class="primary-button" onclick="saveTodo('${esc(t?.id||"")}')">${t?"Save changes":"Add task"}</button></div>
-      ${t?`<button class="danger-button" onclick="deleteTodo('${esc(t.id)}')">Delete task</button>`:""}
+      <div class="form-actions"><button class="secondary-button" onclick="closeTodoForm()">Cancel</button><button class="primary-button" onclick="saveTodo('${esc(t?.id||"")}')">${t?.id?"Save changes":"Add task"}</button></div>
+      ${t?.id?`<button class="danger-button" onclick="deleteTodo('${esc(t.id)}')">Delete task</button>`:""}
     </div>
   </div>`;
 }
 function openTodoForm(t=null){document.body.insertAdjacentHTML("beforeend",todoForm(t));setTimeout(()=>document.getElementById("todo-task")?.focus(),0)}
 function closeTodoForm(){document.getElementById("todo-form-modal")?.remove()}
+function todoRedraw(){if(currentPage==="planner")rerenderCal();else show("todo")}
 async function saveTodo(id){
   const task=document.getElementById("todo-task")?.value.trim();
   const due=document.getElementById("todo-due")?.value||null;
@@ -748,14 +745,14 @@ async function saveTodo(id){
   if(id){
     const i=state.todos.findIndex(x=>x.id===id);
     if(i>=0)state.todos[i]={...state.todos[i],...body,bucket:bucket({...state.todos[i],...body})};
-    closeTodoForm();toast("Task updated");show("todo");
+    closeTodoForm();toast("Task updated");todoRedraw();
     try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify(body)});markLoaded("todos")}
-    catch(e){await load("todos",{force:true});show("todo");toast("Couldn't save task: "+e.message)}
+    catch(e){await load("todos",{force:true});todoRedraw();toast("Couldn't save task: "+e.message)}
   }else{
     try{
       const d=await api("/api/todos",{method:"POST",body:JSON.stringify(body)});
       if(d?.todo)state.todos.unshift({...d.todo,bucket:bucket(d.todo)});else invalidate("todos");
-      closeTodoForm();toast("Task added");show("todo");
+      closeTodoForm();toast("Task added");todoRedraw();
     }catch(e){toast("Couldn't save task: "+e.message)}
   }
 }
@@ -781,15 +778,84 @@ function todo(){
         <button class="chev" onclick="editTodo('${esc(t.id)}')" aria-label="Edit task">${icon("chevron-right")}</button></div>`;
     }
   }
-  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Planner",page:"planner"},{label:"To do"}])}<div class="title-row"><h1 class="screen-title page-title">To do</h1><button class="plus" onclick="openTodoForm()" aria-label="Add task">${icon("plus")}</button></div><div class="filterbar">${["All","Overdue","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" aria-pressed="${todoFilter===x}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first "+icon("arrow-down"):"Oldest first "+icon("arrow-up")}</button></div>${sections||'<div class="empty">No tasks found.</div>'}</main>${nav("planner")}</div>`;
+  return plannerShell("todo","To do",`<div class="bd-editbar"><span class="sub">Tasks</span><button class="plus" onclick="openTodoForm()" aria-label="Add task">${icon("plus")}</button></div><div class="filterbar">${["All","Overdue","Today","Upcoming","Done"].map(x=>`<button class="pill ${todoFilter===x?"active":""}" aria-pressed="${todoFilter===x}" onclick="todoFilter='${x}';show('todo')">${x}</button>`).join("")}</div><div class="todo-toolbar"><span>Sort by due date</span><button class="sort-button" onclick="todoSort=todoSort==='desc'?'asc':'desc';show('todo')">${todoSort==='desc'?"Newest first "+icon("arrow-down"):"Oldest first "+icon("arrow-up")}</button></div>${sections||'<div class="empty">No tasks found.</div>'}`);
 }
 function editTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;openTodoForm(t);load("todo-options")}
-async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;const previous=t.status,status=nextTodoStatus(previous);t.status=status;t.bucket=bucket(t);show("todo");try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})});markLoaded("todos")}catch(e){t.status=previous;t.bucket=bucket(t);show("todo");toast("Couldn't update task: "+e.message)}}
-async function deleteTodo(id){if(!confirm("Delete this task?"))return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"DELETE"});state.todos=state.todos.filter(x=>x.id!==id);markLoaded("todos");closeTodoForm();toast("Task deleted");show("todo")}catch(e){toast("Couldn't delete task: "+e.message)}}
+async function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;const previous=t.status,status=nextTodoStatus(previous);t.status=status;t.bucket=bucket(t);todoRedraw();try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})});markLoaded("todos")}catch(e){t.status=previous;t.bucket=bucket(t);todoRedraw();toast("Couldn't update task: "+e.message)}}
+async function deleteTodo(id){if(!confirm("Delete this task?"))return;try{await api(`/api/todos/${encodeURIComponent(id)}`,{method:"DELETE"});state.todos=state.todos.filter(x=>x.id!==id);markLoaded("todos");closeTodoForm();toast("Task deleted");todoRedraw()}catch(e){toast("Couldn't delete task: "+e.message)}}
 function events(){
   const groups=groupEventsByDay(state.events);
   const body=groups.length?groups.map(([dayKey,list])=>`<div class="todo-group"><b>${eventDayLabel(dayKey)}</b></div>${list.map(e=>`<div class="card row"><div class="event-time">${eventTimeLabel(e)}</div><div class="grow"><div class="title">${esc(e.title)}</div>${e.location?`<div class="sub">${esc(e.location)}</div>`:""}</div></div>`).join("")}`).join(""):'<div class="empty">No events in the next 14 days.</div>';
-  return `<div class="shell">${header()}<main class="page">${crumbs([{label:"Planner",page:"planner"},{label:"Events"}])}<div class="title-row"><h1 class="screen-title page-title">Events</h1><a class="plus" href="https://calendar.google.com/calendar/u/0/r/eventedit" target="_blank" rel="noopener" aria-label="Add event">${icon("plus")}</a></div>${body}</main>${nav("planner")}</div>`;
+  return plannerShell("events","Events",`<div class="bd-editbar"><span class="sub">Next 14 days</span><a class="plus" href="https://calendar.google.com/calendar/u/0/r/eventedit" target="_blank" rel="noopener" aria-label="Add event">${icon("plus")}</a></div>${body}`);
+}
+/* ---- Planner calendar (v0.6.0): events, tasks due and meals; tabs Calendar / To do / Events ---- */
+let calView=null,calSel=null,calEv={key:"",list:[]},calWanted="";
+const calLayers={e:true,t:true,m:true};
+const CAL_NAMES={e:"Events",t:"Tasks",m:"Meals"};
+function plannerTabs(active){return `<div class="filterbar">${[["planner","Calendar"],["todo","To do"],["events","Events"]].map(([p,l])=>`<button class="pill${p===active?" active":""}"${p===active?' aria-current="page"':""} onclick="show('${p}')">${l}</button>`).join("")}</div>`}
+function plannerShell(page,label,inner){return `<div class="shell">${header()}<main class="page${page==="planner"?" cal":""}">${crumbs([{label:"Planner",page:"planner"},{label}])}<h1 class="screen-title page-title">Planner</h1>${plannerTabs(page)}${inner}</main>${nav("planner")}</div>`}
+function monthGrid(month){ // weeks start on Monday; the grid begins on the Monday on or before the 1st
+  const [y,m]=month.split("-").map(Number),offset=(isoDate(`${month}-01`).getDay()+6)%7;
+  return{start:shiftIso(`${month}-01`,-offset),weeks:Math.ceil((offset+new Date(y,m,0).getDate())/7)};
+}
+function weekLabel(start){
+  const a=isoDate(start),b=isoDate(shiftIso(start,6)),mo=d=>d.toLocaleDateString("en-GB",{month:"short"});
+  return a.getMonth()===b.getMonth()?`${a.getDate()} – ${b.getDate()} ${mo(b)} ${b.getFullYear()}`:`${a.getDate()} ${mo(a)} – ${b.getDate()} ${mo(b)} ${b.getFullYear()}`;
+}
+const calDayName=d=>isoDate(d).toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
+function calItems(date){
+  const ev=calLayers.e?calEv.list.filter(e=>eventDayKey(e)===date).map(e=>({k:"e",e})):[];
+  const tk=calLayers.t?state.todos.filter(t=>t.due===date).map(t=>({k:"t",t})):[];
+  const ml=calLayers.m?state.mealPlan.filter(m=>m.date===date&&slotOf(m)).sort((x,y)=>MEALS.indexOf(slotOf(x))-MEALS.indexOf(slotOf(y))).map(m=>({k:"m",m})):[];
+  return [...ev,...tk,...ml];
+}
+function calItem({k,e,t,m}){
+  if(k==="e")return `<div class="cal-item e"><div class="grow"><div class="title">${esc(e.title)}</div><div class="sub">${esc(eventRange(e))}${e.location?` · ${esc(e.location)}`:""}</div></div></div>`;
+  if(k==="t"){const sc=todoStatusClass(t.status),late=bucket(t)==="overdue";return `<div class="cal-item t" role="button" tabindex="0" onclick="editTodo('${esc(t.id)}')"><button class="check ${sc}" aria-label="Change task status" onclick="event.stopPropagation();toggleTodo('${esc(t.id)}')"></button><div class="grow"><div class="title${sc==="done"?" completed":""}">${esc(t.task)}</div><div class="sub${late?" overdue-date":""}">${late?"Overdue":esc(t.category||"Task")}</div></div></div>`}
+  return `<div class="cal-item m" role="button" tabindex="0" onclick="openPlanForm({id:'${esc(m.id)}'})"><div class="grow"><div class="title">${esc(recipeFor(m)?.name||"Recipe")}</div><div class="sub">${esc(slotOf(m))}${m.servings?` · ${m.servings==1?"1 serving":`${esc(m.servings)} servings`}`:""}</div></div></div>`;
+}
+function calEnsureEvents(from,days){
+  const key=`${from}|${days}`;calWanted=key;
+  if(calEv.key===key)return;
+  api(`/api/events?from=${from}&days=${days}`).then(d=>d.events||[],()=>[]).then(list=>{if(calWanted!==key)return;calEv={key,list};rerenderCal()});
+}
+function calendar(){
+  const view=calView||(isTablet()?"week":"month"),now=today(),sel=calSel||(calSel=now),month=sel.slice(0,7);
+  const grid=monthGrid(month),wk=weekStartOf(isoDate(sel));
+  if(view==="month")calEnsureEvents(grid.start,grid.weeks*7);else calEnsureEvents(wk,7);
+  const title=view==="month"?isoDate(`${month}-01`).toLocaleDateString("en-GB",{month:"long",year:"numeric"}):weekLabel(wk);
+  const head=`<div class="cal-nav"><div class="cal-step"><button aria-label="Previous ${view}" onclick="calStep(-1)">${icon("chevron-left")}</button><b>${title}</b><button aria-label="Next ${view}" onclick="calStep(1)">${icon("chevron-right")}</button><button class="cal-today" onclick="calToday()">Today</button></div><div class="seg" role="group" aria-label="View">${["month","week"].map(v=>`<button class="${v===view?"on":""}" aria-pressed="${v===view}" onclick="calSetView('${v}')">${v==="month"?"Month":"Week"}</button>`).join("")}</div></div><div class="cal-chips">${["e","t","m"].map(k=>`<button class="cal-chip ${k}${calLayers[k]?" on":""}" aria-pressed="${calLayers[k]}" onclick="calLayer('${k}')"><i></i>${CAL_NAMES[k]}</button>`).join("")}</div>`;
+  let body;
+  if(view==="month"){
+    const cells=[...Array(grid.weeks*7)].map((_,i)=>{
+      const d=shiftIso(grid.start,i),its=calItems(d),kinds=[...new Set(its.map(x=>x.k))];
+      return `<button class="cal-cell${d.slice(0,7)!==month?" other":""}${d===sel?" sel":""}${d===now?" today":""}" aria-label="${esc(calDayName(d))}, ${its.length} item${its.length===1?"":"s"}" onclick="calPick('${d}')"><span>${isoDate(d).getDate()}</span><em>${kinds.map(k=>`<i class="${k}"></i>`).join("")}</em></button>`;
+    }).join("");
+    body=`<div class="cal-grid">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(n=>`<div class="cal-dow">${n}</div>`).join("")}${cells}</div><div class="row cal-agenda-head"><b>${esc(calDayName(sel))}</b><button class="cal-add" onclick="calAdd('${sel}')">+ Add</button></div>${calItems(sel).map(calItem).join("")||'<div class="sub" style="padding:8px 0">Nothing planned.</div>'}`;
+  }else{
+    body=`<div class="cal-week">${[...Array(7)].map((_,i)=>{
+      const d=shiftIso(wk,i),dt=isoDate(d);
+      return `<section class="cal-day${d===now?" today":""}"><div class="cal-day-head"><span>${dt.toLocaleDateString("en-GB",{weekday:"short"})} <b>${dt.getDate()}</b>${d===now?` <small class="cal-tag">· Today</small>`:""}</span><button class="cal-plus" aria-label="Add on ${esc(calDayName(d))}" onclick="calAdd('${d}')">+</button></div>${calItems(d).map(calItem).join("")||'<div class="sub">Nothing planned</div>'}</section>`;
+    }).join("")}</div>`;
+  }
+  return plannerShell("planner","Calendar",head+body);
+}
+function rerenderCal(){if(currentPage!=="planner")return;const y=window.scrollY||0;byId("app").innerHTML=calendar();scrollTo(0,y)}
+function calPick(d){calSel=d;rerenderCal()}
+function calToday(){calSel=today();rerenderCal()}
+function calSetView(v){calView=v;rerenderCal()}
+function calLayer(k){calLayers[k]=!calLayers[k];rerenderCal()}
+function calStep(dir){
+  const view=calView||(isTablet()?"week":"month");
+  if(view==="week")calSel=shiftIso(calSel,7*dir);
+  else{const [y,m]=calSel.slice(0,7).split("-").map(Number);calSel=iso(new Date(y,m-1+dir,1))}
+  rerenderCal();
+}
+function closeCalAdd(){byId("cal-add-modal")?.remove()}
+function calAdd(d){
+  closeCalAdd();
+  const row=(ico,t,s,end)=>`<span class="cal-opt-ico">${icon(ico)}</span><span class="grow"><b>${t}</b><span class="sub">${s}</span></span>${icon(end)}`;
+  document.body.insertAdjacentHTML("beforeend",`<div class="modal-backdrop sheet-bg" id="cal-add-modal"><div class="modal sheet" role="dialog" aria-modal="true" aria-labelledby="cal-add-title"><div class="eyebrow">Planner</div><h2 id="cal-add-title">Add on ${esc(calDayName(d))}</h2><button class="cal-opt" onclick="closeCalAdd();openTodoForm({due:'${d}'});load('todo-options')">${row("check","Add a task","Due that day","chevron-right")}</button><button class="cal-opt" onclick="closeCalAdd();openPlanForm({date:'${d}'})">${row("utensils","Add a meal","Pick a recipe and meal for the day","chevron-right")}</button><a class="cal-opt" href="https://calendar.google.com/calendar/u/0/r/eventedit?dates=${d.replaceAll("-","")}/${shiftIso(d,1).replaceAll("-","")}" target="_blank" rel="noopener" onclick="closeCalAdd()">${row("calendar-plus","Add an event","Opens Google Calendar","external-link")}</a><button class="secondary-button" onclick="closeCalAdd()">Cancel</button></div></div>`);
 }
 /* ---- Budget (v0.4.0) ---- */
 const BUDGET_COLORS=["#0f806a","#e0a100","#6b4fb0","#c4573f","#2f7fb5","#9aa5ab","#b04f8f","#4f9a3a","#7a6a4f","#3f6f8f"];
@@ -954,33 +1020,178 @@ async function saveBudgetEdit(){
     budgetEditError(/not found|404/i.test(e?.message||"")?"Update your Worker to v0.4.1 to save budgets.":(e?.message||"Couldn't save the budgets"));
   }
 }
+/* ---- Tablet (v0.5.0): side rail, dashboard Home, cooking view ---- */
+const tabletQuery=matchMedia("(min-width:900px)");
+function isTablet(){return tabletQuery.matches}
+let currentId;
+let wakeLock=null;
+async function keepAwake(on){
+  try{
+    if(on&&!wakeLock&&navigator.wakeLock){wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}
+    else if(!on&&wakeLock)await wakeLock.release();
+  }catch{} // shortcut: if the browser refuses (battery saver, old OS) the screen sleeps normally
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")keepAwake(isTablet()&&(currentPage==="home"||currentPage==="recipe"))});
+
+function clockText(){return new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
+const dashLink=(label,page)=>`<button class="dash-link" onclick="show('${page}')">${label}${icon("chevron-right")}</button>`;
+const dashRow=(lead,title,sub,click)=>`<div class="dash-row"${click?` role="button" tabindex="0" onclick="${click}"`:""}>${lead}<div class="grow"><div>${title}</div>${sub?`<div class="sub">${sub}</div>`:""}</div></div>`;
+const dashDay=d=>`<span class="dash-day">${isoDate(d).toLocaleDateString("en-GB",{weekday:"short"})}</span>`;
+function eventRange(e){if(e.allDay)return"All day";const t=d=>new Date(d).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});return`${t(e.start)} – ${t(e.end)}`}
+function dashBudget(){
+  const b=state.budget;
+  if(!b||!b.hasBudget)return`<div class="sub">${b?"No monthly budgets set yet.":"The budget isn't available."}</div>`;
+  const t=b.totals,projected=t.spent/b.dayOfMonth*b.daysInMonth,over=projected-t.budget;
+  const status=t.spent>t.budget?"over":over>0||t.percent>=80?"watch":"ok";
+  const updated=b.lastTransaction?` · updated ${isoDate(b.lastTransaction).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}`:"";
+  return `<div class="dash-title"><span class="sub" style="margin:0;font-size:15px">${monthShort(b.month)}${updated}</span><span class="dash-chip ${status}">${{over:"Over",watch:"Watch",ok:"On track"}[status]}</span></div><div class="bd-row"><div class="bd-big">${gbp(t.spent)}</div><span class="sub" style="font-size:16px">of ${gbp(t.budget)}</span></div><div class="bd-bar ${budgetTone(t.percent)}"><i style="width:${Math.min(100,t.percent||0)}%"></i></div><div class="bd-row sub"><span>${t.percent}% used</span><span>Day ${b.dayOfMonth} of ${b.daysInMonth}</span></div>${over>0&&status!=="over"?`<div class="dash-insight"><b>Spending is running ahead of plan</b><br>At this pace, month end is about ${gbp(projected)}, around ${gbp(over)} over budget.</div>`:""}`;
+}
+function dashboard(){
+  const period=dayPeriod(),key=today(),weekEnd=shiftIso(key,6);
+  const events=state.events.filter(e=>eventDayKey(e)===key);
+  const tasks=state.todos.filter(t=>isOpen(t)&&(t.bucket==="today"||t.bucket==="tomorrow")).slice(0,4);
+  const overdue=state.todos.filter(t=>isOpen(t)&&t.bucket==="overdue");
+  const dinner=state.mealPlan.find(m=>m.date===key&&slotOf(m)==="Dinner"),dr=recipeFor(dinner);
+  const others=state.mealPlan.filter(m=>m.date===key&&slotOf(m)!=="Dinner"&&recipeFor(m)).sort((x,y)=>(slotOf(x)==="Lunch")-(slotOf(y)==="Lunch"));
+  const next=[1,2,3].map(n=>{const d=shiftIso(key,n),m=state.mealPlan.find(x=>x.date===d&&slotOf(x)==="Dinner");return{d,r:recipeFor(m)}}).filter(x=>x.r);
+  const soon=state.events.filter(e=>eventDayKey(e)>key&&eventDayKey(e)<=weekEnd).slice(0,4);
+  const ico=c=>`<div class="dash-ico" style="background:${c}">${icon("calendar-days")}</div>`;
+  const card=(title,link,inner)=>`<section class="dash-card"><div class="dash-title"><h2>${title}</h2>${link}</div>${inner}</section>`;
+  const today_=card("Today",dashLink("Planner","planner"),`${events.length?`<div class="dash-label">EVENTS</div>${events.map(e=>dashRow(ico("var(--lav)"),esc(e.title),esc(eventRange(e)),"show('events')")).join("")}`:""}${tasks.length?`<div class="dash-label">TASKS DUE</div>${tasks.map(t=>dashRow('<i class="check"></i>',esc(t.task),t.bucket==="today"?"Today":"Tomorrow","show('todo')")).join("")}`:""}${!events.length&&!tasks.length?`<div class="sub" style="padding:8px 0">Nothing on today.</div>`:""}${overdue.length?`<div class="dash-alert" role="button" tabindex="0" onclick="show('todo')">${icon("info")}<div><b>${overdue.length} overdue task${overdue.length===1?"":"s"}</b><div class="sub" style="margin:0">${esc(overdue[0].task)}</div></div></div>`:""}`);
+  const mealRows=others.map(m=>dashRow(`<span class="dash-day">${esc(slotOf(m))}</span>`,esc(recipeFor(m).name),"",`show('recipe','${esc(m.recipeId)}')`)).join("");
+  const nextRows=next.map(x=>dashRow(dashDay(x.d),esc(x.r.name),"Dinner",`show('recipe','${esc(x.r.id)}')`)).join("");
+  const extra=(mealRows?`<div class="dash-label">ALSO TODAY</div>${mealRows}`:"")+(nextRows?`<div class="dash-label">NEXT 3 DAYS</div>${nextRows}`:"");
+  const hero=dr?`${dr.image?`<img class="dash-img" src="${esc(dr.image)}" alt="">`:`<div class="dash-img">${icon("soup","icon-thin")}</div>`}<div class="dash-name">${esc(dr.name)}</div><div class="sub">${[cookTime(dr.cookingTime),`${dinner.servings||dr.servings||""} servings`].filter(Boolean).map(esc).join(" · ")}</div><button class="secondary-button" onclick="show('recipe','${esc(dr.id)}')">View recipe${icon("chevron-right")}</button>`:`<div class="sub" style="padding:8px 0 12px">Nothing planned for tonight.</div><button class="secondary-button" onclick="show('plan')">Plan a meal</button>`;
+  const dinner_=card("Tonight’s dinner",dashLink("Meals","meals"),hero+extra);
+  const budget_=card("Budget",dashLink("Budget","budget"),dashBudget());
+  const soon_=card("Coming up",dashLink("Planner","planner"),soon.length?soon.map(e=>dashRow(dashDay(eventDayKey(e)),esc(e.title),esc(eventTimeLabel(e)),"show('events')")).join(""):`<div class="sub" style="padding:8px 0">Nothing in the next week.</div>`);
+  return `<div class="shell"><main class="page dash"><div class="dash-head"><div><div class="eyebrow">${greetingText(period)},</div><div class="hello">The Wilsons <span class="sun">${icon(greetingIcon(period))}</span></div></div><div class="dash-clock"><div><div class="clock" id="clock">${clockText()}</div><div class="sub">${new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"})}</div></div><button class="avatar" onclick="show('settings')" aria-label="Settings" title="Settings">${icon("settings")}</button></div></div><div class="dash-grid"><div class="dash-col">${today_}</div><div class="dash-col">${dinner_}</div><div class="dash-col">${budget_}${soon_}</div></div></main>${nav("home")}</div>`;
+}
+
+/* Cooking view: ingredients and method side by side, servings, timers, focus mode */
+const cookServings={};
+function ingredientText(x,f){
+  if(typeof x==="string"||f===1||x.quantity===null||x.quantity===undefined)return typeof x==="string"?x:(x.text||x.name||"");
+  const u=String(x.unit||""),tight=["g","kg","ml","l"].includes(u.toLowerCase());
+  return `${Math.round(Number(x.quantity)*f*100)/100}${u?`${tight?"":" "}${u}`:""} ${x.name}${x.preparation?`, ${x.preparation}`:""}${x.optional?" (optional)":""}`;
+}
+// shortcut: reads "N minutes/hours" only ("1 hour 30 minutes" gives 60 and 30; a range like "10-15 min" gives 10)
+function stepDurations(text){
+  const out=[];
+  for(const m of String(text).matchAll(/(\d+(?:\.\d+)?)(?:\s*(?:-|–|to)\s*\d+(?:\.\d+)?)?\s*(hours?|hrs?|minutes?|mins?)\b/gi)){
+    const v=Math.round(/^h/i.test(m[2])?parseFloat(m[1])*60:parseFloat(m[1]));
+    if(v>0&&!out.includes(v))out.push(v);
+  }
+  return out;
+}
+function cookData(r){
+  const ing=(r.ingredients||[]).filter(x=>!(typeof x==="string"&&/^rec[A-Za-z0-9]{14}$/.test(x)));
+  const n=cookServings[r.id]??r.servings;
+  return{ing,steps:methodSteps(r.recipeText),n,f:r.servings&&n?n/r.servings:1};
+}
+function cookServe(id,d){const r=state.recipes.find(x=>x.id===id);cookServings[id]=Math.min(99,Math.max(1,(cookServings[id]??r.servings)+d));show("recipe",id)}
+function cookView(r,ing,steps,t){
+  const {n,f}=cookData(r),id=esc(r.id),current=steps.findIndex((_,i)=>!t.s.has(i));
+  const source=/^https?:\/\//i.test(r.sourceUrl||"")?`<a class="link source-link" href="${esc(r.sourceUrl)}" target="_blank" rel="noopener noreferrer">${icon("external-link")} View original recipe</a>`:"";
+  const stepper=r.servings?`<div class="stepper"><button aria-label="Fewer servings" onclick="cookServe('${id}',-1)">${icon("minus")}</button><span>${n} servings</span><button aria-label="More servings" onclick="cookServe('${id}',1)">${icon("plus")}</button></div>`:"";
+  return `<div class="shell"><main class="page cook">${crumbs([{label:"Meals",page:"meals"},{label:"Recipes",page:"recipes"}])}<div class="cook-head"><div><h1 class="screen-title">${esc(r.name)}</h1><div class="meta">${r.cookingTime?`<span>${icon("clock")} ${esc(cookTime(r.cookingTime))}</span>`:""}${navigator.wakeLock?`<span>${icon("sun")} Screen stays on</span>`:""}</div>${source}</div><div class="cook-actions">${stepper}<button class="secondary-button cook-btn" onclick="openPlanForm({recipeId:'${id}'})">${icon("calendar-plus")} Add to plan</button>${steps.length?`<button class="primary-button cook-btn" onclick="openFocus('${id}')">${icon("chef-hat")} Focus mode</button>`:""}</div></div>
+<div class="cook-cols"><section class="card cook-card"><div class="section-row"><h3>Ingredients</h3><button class="link" onclick="resetTicks('${id}')">Reset ticks</button></div>${ing.map((x,i)=>tickRow(r.id,"i",i,ingredientText(x,f),t.i.has(i))).join("")||'<p class="desc">No ingredients saved.</p>'}</section><section class="card cook-card"><div class="section-row"><h3>Method</h3></div>${steps.map((x,i)=>`<div class="step${i===current?" current":""}">${tickRow(r.id,"s",i,x,t.s.has(i))}${stepDurations(x).map(m=>`<button class="secondary-button cook-timer" onclick="startTimer('Step ${i+1} · ${m} min',${m})">${icon("clock")} Start ${m} min timer</button>`).join("")}</div>`).join("")||'<p class="desc">No method saved.</p>'}</section></div><div class="timers-bar js-timers">${timersInner()}</div></main>${nav("meals")}</div>`;
+}
+
+/* Timers (kept in memory: they carry on while you browse, and are lost on reload) */
+let timers=[],timerSeq=0,timerLoop=null,audioCtx=null;
+const timerLeft=t=>t.left!==null?t.left:Math.max(0,t.end-Date.now());
+function timerClock(t){
+  if(t.done)return"Done";
+  const s=Math.ceil(timerLeft(t)/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=String(s%60).padStart(2,"0");
+  return h?`${h}:${String(m).padStart(2,"0")}:${x}`:`${m}:${x}`;
+}
+function timersInner(){
+  return timers.map(t=>`<div class="timer${t.done?" done":""}"><b>${esc(t.label)}</b><span class="timer-time" data-t="${t.id}">${timerClock(t)}</span>${t.done?"":`<button onclick="timerToggle(${t.id})">${t.left!==null?"Resume":"Pause"}</button><button onclick="timerAdd(${t.id})">+1 min</button>`}<button aria-label="Dismiss timer" onclick="timerDismiss(${t.id})">${icon("x")}</button></div>`).join("");
+}
+function renderTimers(){
+  document.querySelectorAll(".js-timers").forEach(el=>{el.innerHTML=timersInner()});
+  if(byId("focus"))renderFocus();
+}
+function startTimer(label,minutes){
+  timers.push({id:++timerSeq,label,end:Date.now()+minutes*60000,left:null,done:false});
+  try{audioCtx=audioCtx||new AudioContext();audioCtx.resume()}catch{} // browsers only allow sound after a tap
+  timerLoop=timerLoop||setInterval(tickTimers,1000);
+  renderTimers();
+}
+function tickTimers(){
+  const finished=timers.filter(t=>!t.done&&t.left===null&&t.end<=Date.now());
+  finished.forEach(t=>{t.done=true});
+  if(finished.length){beep();renderTimers();return}
+  document.querySelectorAll("[data-t]").forEach(el=>{const t=timers.find(x=>x.id===Number(el.dataset.t));if(t)el.textContent=timerClock(t)});
+}
+function beep(){
+  navigator.vibrate?.([300,150,300]);
+  try{[0,.8,1.6].forEach(d=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);g.gain.value=.25;o.frequency.value=880;o.start(audioCtx.currentTime+d);o.stop(audioCtx.currentTime+d+.5)})}catch{}
+}
+function timerToggle(id){const t=timers.find(x=>x.id===id);if(!t)return;if(t.left!==null){t.end=Date.now()+t.left;t.left=null}else t.left=Math.max(0,t.end-Date.now());renderTimers()}
+function timerAdd(id){const t=timers.find(x=>x.id===id);if(!t)return;if(t.left!==null)t.left+=60000;else t.end+=60000;renderTimers()}
+function timerDismiss(id){timers=timers.filter(x=>x.id!==id);if(!timers.length){clearInterval(timerLoop);timerLoop=null}renderTimers()}
+
+/* Focus mode: one step at a time */
+let focus=null;
+function openFocus(id){
+  const r=state.recipes.find(x=>x.id===id);if(!r)return;
+  const {steps}=cookData(r),t=ticksFor(id),first=steps.findIndex((_,i)=>!t.s.has(i));
+  if(!steps.length)return;
+  focus={id,i:first<0?0:first};renderFocus();
+}
+function closeFocus(){byId("focus")?.remove();const id=focus?.id;focus=null;if(currentPage==="recipe")show("recipe",id)}
+function focusStep(dir){
+  const r=state.recipes.find(x=>x.id===focus.id),{steps}=cookData(r),t=ticksFor(r.id);
+  if(dir>0){t.s.add(focus.i);writeTicks(r.id,t);if(focus.i>=steps.length-1){closeFocus();return}focus.i++}
+  else if(focus.i>0){focus.i--;t.s.delete(focus.i);writeTicks(r.id,t)}
+  renderFocus();
+}
+function renderFocus(){
+  const r=state.recipes.find(x=>x.id===focus.id),{ing,steps,f}=cookData(r),step=steps[focus.i];
+  const low=step.toLowerCase();
+  const chips=ing.filter(x=>String(x.name||"").toLowerCase().split(/\s+/).some(w=>w.length>3&&low.includes(w.replace(/s$/,"")))).map(x=>`<span>${esc(ingredientText(x,f))}</span>`).join("");
+  const timer=stepDurations(step).map(m=>{
+    const label=`Step ${focus.i+1} · ${m} min`,run=timers.find(x=>x.label===label);
+    return run?`<div class="card focus-timer"><div class="sub">${m} min</div><span class="timer-time" data-t="${run.id}">${timerClock(run)}</span><div class="focus-actions">${run.done?`<button class="secondary-button" onclick="timerDismiss(${run.id})">Dismiss</button>`:`<button class="secondary-button" onclick="timerToggle(${run.id})">${run.left!==null?"Resume":"Pause"}</button><button class="secondary-button" onclick="timerAdd(${run.id})">+1 min</button>`}</div></div>`:`<div class="card focus-timer"><div class="sub">${m} min</div><button class="primary-button" onclick="startTimer('${label}',${m})">${icon("clock")} Start timer</button></div>`;
+  }).join("");
+  let el=byId("focus");
+  if(!el){el=document.createElement("div");el.id="focus";el.className="focus";el.setAttribute("role","dialog");el.setAttribute("aria-modal","true");el.setAttribute("aria-label","Focus mode");document.body.appendChild(el)}
+  const last=focus.i>=steps.length-1;
+  el.innerHTML=`<div class="focus-top"><div><b>${esc(r.name)}</b> · Step ${focus.i+1} of ${steps.length}${r.servings?` · ${cookData(r).n} servings`:""}<div class="bd-bar"><i style="width:${(focus.i+1)/steps.length*100}%"></i></div></div><button class="secondary-button" onclick="closeFocus()">Exit focus</button></div><div class="focus-body"><div class="focus-text">${esc(step)}${chips?`<div class="focus-chips">${chips}</div>`:""}</div>${timer?`<div class="focus-timers">${timer}</div>`:""}</div><div class="timers-bar js-timers">${timersInner()}</div><div class="focus-nav"><button class="secondary-button" onclick="focusStep(-1)"${focus.i===0?" disabled":""}>Back</button><button class="primary-button" onclick="focusStep(1)">${last?"Finish":"Next step"}</button></div>`;
+}
 function toast(s){const x=document.createElement("div");x.className="toast";x.setAttribute("role","status");x.textContent=s;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
-const MODAL_CLOSE={"connection-modal":closeConnectionModal,"plan-form-modal":closePlanForm,"todo-form-modal":closeTodoForm,"import-modal":closeImport,"budget-edit-modal":closeBudgetEdit};
+const MODAL_CLOSE={"connection-modal":closeConnectionModal,"plan-form-modal":closePlanForm,"todo-form-modal":closeTodoForm,"import-modal":closeImport,"cal-add-modal":closeCalAdd,"budget-edit-modal":closeBudgetEdit};
 let pressedBackdrop=false; // a drag that starts inside a form and ends outside must not close it
 document.addEventListener("pointerdown",e=>{pressedBackdrop=!!e.target.classList?.contains("modal-backdrop")});
 document.addEventListener("click",e=>{if(pressedBackdrop&&e.target.classList?.contains("modal-backdrop"))MODAL_CLOSE[e.target.id]?.()});
 document.addEventListener("keydown",e=>{
-  if(e.key==="Escape")MODAL_CLOSE[[...document.querySelectorAll(".modal-backdrop")].pop()?.id]?.();
+  if(e.key==="Escape"&&byId("focus"))closeFocus();
+  else if(e.key==="Escape")MODAL_CLOSE[[...document.querySelectorAll(".modal-backdrop")].pop()?.id]?.();
   else if((e.key==="Enter"||e.key===" ")&&e.target.matches?.('[role="button"]')){e.preventDefault();e.target.click()}
 });
 function errorScreen(e){return `<div class="shell">${header(true)}<main class="page"><div class="card" style="padding:20px"><div class="eyebrow">Connection problem</div><h2>Daily Life couldn't reach the Worker.</h2><p class="sub">${esc(e?.message||"Unknown error")}</p><p class="sub">Check DAILY_LIFE_API and DAILY_LIFE_APP_TOKEN in app.js.</p><button class="action-btn m-meal" onclick="show('home')">Try again</button></div></main>${nav("home")}</div>`}
 // Data each screen needs: loaded first if missing, then refreshed in the background.
-const SCREEN_DATA={home:["recipes","todos","mealPlan","events","budget"],plan:["recipes","mealPlan"],planner:["todos","events"],recipes:["recipes"],todo:["todos"],events:["events"],budget:["budget"],"budget-categories":["budget"],"budget-trends":["budget"]};
+const SCREEN_DATA={home:["recipes","todos","mealPlan","events","budget"],plan:["recipes","mealPlan"],planner:["recipes","todos","mealPlan"],recipes:["recipes"],todo:["todos"],events:["events"],budget:["budget"],"budget-categories":["budget"],"budget-trends":["budget"]};
 // Shown at once; refreshed in the background only if already loaded.
 const SOFT_DATA={meals:["recipes"],recipe:["recipes"]};
-const SCREENS={home,recipes,events,meals,plan,planner,settings,usage:usageScreen,"release-notes":releaseNotesScreen,budget:budgetOverview,"budget-categories":budgetCategories,"budget-trends":budgetTrends};
+const SCREENS={home,recipes,events,meals,plan,planner:calendar,settings,usage:usageScreen,"release-notes":releaseNotesScreen,budget:budgetOverview,"budget-categories":budgetCategories,"budget-trends":budgetTrends};
 async function show(page,id){
-  scrollTo(0,0);currentPage=page;const app=document.getElementById("app");
+  scrollTo(0,0);currentPage=page;currentId=id;const app=document.getElementById("app");
   try{
     if(page==="token"||!hasAppToken()){app.innerHTML=tokenScreen();return}
     const need=SCREEN_DATA[page]||[];
     if(need.some(k=>!cacheMeta[k].loaded)){app.innerHTML='<div class="shell loading">Loading…</div>';await Promise.all(need.map(k=>load(k)))}
     app.innerHTML=page==="recipe"?await recipe(id):(SCREENS[page]||todo)();
     if(page==="home")loadLinks();
+    keepAwake(isTablet()&&(page==="home"||page==="recipe"));
     if(page==="usage"||page==="settings"&&!apiUsage)loadUsage();
     if(page==="release-notes"||page==="settings"&&!releaseNotes)loadReleaseNotes();
     if(page==="todo"&&!cacheMeta["todo-options"].loaded)load("todo-options",{background:true});
     refreshDataInBackground(need.length?need:SOFT_DATA[page]||[]);
   }catch(e){console.error(e);app.innerHTML=errorScreen(e)}
 }
+tabletQuery.addEventListener("change",()=>show(currentPage,currentId));
+setInterval(()=>{const c=byId("clock");if(c)c.textContent=clockText()},15000);
 if(!window.location.hash)show("home");

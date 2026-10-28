@@ -14,6 +14,15 @@
  * Environment variables / Secrets:
  * AIRTABLE_TOKEN
  * APP_TOKEN
+ * USAGE (KV namespace binding) — counts Airtable API calls for the
+ *                       Settings > API usage screen.
+ * AIRTABLE_USAGE_SEED  — optional number: the current month's figure
+ *                       from Airtable's Usage tab. Applied once, the
+ *                       first time the counter runs.
+ * AIRTABLE_MONTHLY_LIMIT — optional number, default 1000.
+ * FAMILY_DRIVE_URL    — the family Google Drive link (https). Kept as a
+ *                       Worker secret so it never appears in the public
+ *                       site code; served to the app by GET /api/links.
  * CALENDAR_ICS_URL   — the family calendar's "Secret address in iCal
  *                       format" from Google Calendar settings. Events
  *                       are read directly from Google — nothing is
@@ -32,6 +41,11 @@ const MEAL_PLAN_TABLE_ID = "tblZFGDTnJzW0ekr9";
 const TODOS_TABLE_ID = "tbl5UZaswultCt19p";
 const INGREDIENTS_TABLE_ID = "tblK8uUPdQ3s43ZOk";
 const INGREDIENT_QUANTITIES_TABLE_ID = "tbl70xlNT8xvPCDOP";
+
+const BUDGET_CATEGORIES_TABLE_ID = "tblJIhyndPRLLzRhC";
+const BUDGET_TRANSACTIONS_TABLE_ID = "tbl0eITDQks2Th4of";
+const BUDGET_RULES_TABLE_ID = "tblMAZhjgOZt9f935";
+const BUDGET_HISTORY_TABLE_ID = "tbl2P3CbzZEgPUVUy";
 
 
 /* =========================================================
@@ -58,7 +72,8 @@ const CACHE_TTL = {
   RECIPES: 3600,
   MEAL_PLAN: 600,
   TODO_OPTIONS: 3600,
-  TODOS: 45
+  TODOS: 45,
+  BUDGET: 600
 };
 
 const TODOS_CACHE_KEY = "https://daily-life-cache.internal/todos";
@@ -139,231 +154,66 @@ export default {
 
     const configuredToken = env.APP_TOKEN;
 
-    // Debug logging (comment out after fixing)
-    console.log("DEBUG: Token authentication check");
-    console.log("Supplied token length:", suppliedToken?.length || 0);
-    console.log("Configured token length:", configuredToken?.length || 0);
-    console.log("Supplied token first 10 chars:", suppliedToken?.substring(0, 10));
-    console.log("Configured token first 10 chars:", configuredToken?.substring(0, 10));
-
     if (
       !suppliedToken ||
       !secureCompare(suppliedToken, configuredToken)
     ) {
 
-      console.log("DEBUG: Token comparison failed");
       return json({
         error: "Unauthorised"
       }, 401, corsHeaders);
 
     }
 
-    console.log("DEBUG: Token comparison passed");
 
+    const { method } = request;
+    const path = url.pathname;
+    const id = path.split("/")[3];
+    const bad = message => json({ error: message }, 400, corsHeaders);
 
-    /* =====================================================
-       RECIPES
-       ===================================================== */
-
-    /*
-     * GET /api/recipes
-     */
-    if (
-      request.method === "GET" &&
-      url.pathname === "/api/recipes"
-    ) {
-
-      return await getRecipes(
-        url,
-        env,
-        corsHeaders
-      );
-
-    }
-
-
-    /*
-     * GET /api/recipes/:id
-     */
-    if (
-      request.method === "GET" &&
-      url.pathname.startsWith("/api/recipes/")
-    ) {
-
-      const recordId =
-        url.pathname.split("/")[3];
-
-      if (!recordId) {
-
-        return json({
-          error: "Missing recipe ID"
-        }, 400, corsHeaders);
-
+    const routes = {
+      GET: {
+        "/api/recipes": () => getRecipes(url, env, corsHeaders),
+        "/api/meal-plan": () => getMealPlan(url, env, corsHeaders),
+        "/api/todos": () => getTodos(url, env, corsHeaders),
+        "/api/todo-options": () => getTodoOptions(env, corsHeaders),
+        "/api/links": () => getLinks(env, corsHeaders),
+        "/api/usage": () => getUsage(env, corsHeaders),
+        "/api/events": () => getEvents(url, env, corsHeaders),
+        "/api/budget": () => getBudget(env, corsHeaders)
+      },
+      POST: {
+        "/api/meal-plan": () => createMealPlanEntry(request, env, corsHeaders),
+        "/api/todos": () => createTodo(request, env, corsHeaders),
+        "/api/import/preview": () => importPreview(request, env, corsHeaders),
+        "/api/import/save": () => importSave(request, env, corsHeaders),
+        "/api/budget/categories": () => saveBudgetCategories(request, env, corsHeaders)
       }
+    };
 
-      return await getRecipe(
-        recordId,
-        env,
-        corsHeaders
-      );
+    const route = routes[method]?.[path];
 
+    if (route) return await route();
+
+    // Routes with a record ID: /api/<collection>/:id
+    if (method === "GET" && path.startsWith("/api/recipes/")) {
+      return id ? await getRecipe(id, env, corsHeaders) : bad("Missing recipe ID");
     }
 
+    const edits = method === "PATCH" || method === "DELETE";
 
-    /* =====================================================
-       MEAL PLAN
-       ===================================================== */
-
-    /*
-     * GET /api/meal-plan
-     *
-     * Optional:
-     *
-     * ?start=2026-09-07
-     * ?end=2026-09-13
-     */
-    if (
-      request.method === "GET" &&
-      url.pathname === "/api/meal-plan"
-    ) {
-
-      return await getMealPlan(
-        url,
-        env,
-        corsHeaders
-      );
-
+    if (edits && path.startsWith("/api/meal-plan/")) {
+      if (!AIRTABLE_RECORD_ID.test(id || "")) return bad("Invalid meal plan ID");
+      return await (method === "PATCH"
+        ? updateMealPlanEntry(request, id, env, corsHeaders)
+        : deleteMealPlanEntry(id, env, corsHeaders));
     }
 
-
-    /* =====================================================
-       TO DOS
-       ===================================================== */
-
-    /*
-     * GET /api/todos
-     */
-    if (
-      request.method === "GET" &&
-      url.pathname === "/api/todos"
-    ) {
-
-      return await getTodos(
-        url,
-        env,
-        corsHeaders
-      );
-
-    }
-
-
-    /*
-     * GET /api/todo-options
-     */
-    if (
-      request.method === "GET" &&
-      url.pathname === "/api/todo-options"
-    ) {
-      return await getTodoOptions(env, corsHeaders);
-    }
-
-
-    /*
-     * POST /api/todos
-     */
-    if (
-      request.method === "POST" &&
-      url.pathname === "/api/todos"
-    ) {
-
-      return await createTodo(
-        request,
-        env,
-        corsHeaders
-      );
-
-    }
-
-
-    /*
-     * PATCH /api/todos/:id
-     */
-    if (
-      request.method === "PATCH" &&
-      url.pathname.startsWith("/api/todos/")
-    ) {
-
-      const recordId =
-        url.pathname.split("/")[3];
-
-      if (!recordId) {
-
-        return json({
-          error: "Missing todo ID"
-        }, 400, corsHeaders);
-
-      }
-
-      return await updateTodo(
-        request,
-        recordId,
-        env,
-        corsHeaders
-      );
-
-    }
-
-
-    /*
-     * DELETE /api/todos/:id
-     */
-    if (
-      request.method === "DELETE" &&
-      url.pathname.startsWith("/api/todos/")
-    ) {
-
-      const recordId =
-        url.pathname.split("/")[3];
-
-      if (!recordId) {
-
-        return json({
-          error: "Missing todo ID"
-        }, 400, corsHeaders);
-
-      }
-
-      return await deleteTodo(
-        recordId,
-        env,
-        corsHeaders
-      );
-
-    }
-
-
-    /* =====================================================
-       EVENTS (Google Calendar — read-only, via private ICS feed)
-       ===================================================== */
-
-    /*
-     * GET /api/events
-     *
-     * Optional:
-     *
-     * ?days=14   (default 14, capped at 60)
-     */
-    if (
-      request.method === "GET" &&
-      url.pathname === "/api/events"
-    ) {
-
-      return await getEvents(
-        url,
-        env,
-        corsHeaders
-      );
-
+    if (edits && path.startsWith("/api/todos/")) {
+      if (!AIRTABLE_RECORD_ID.test(id || "")) return bad("Invalid todo ID");
+      return await (method === "PATCH"
+        ? updateTodo(request, id, env, corsHeaders)
+        : deleteTodo(id, env, corsHeaders));
     }
 
 
@@ -373,6 +223,20 @@ export default {
     return json({
       error: "Not found"
     }, 404, corsHeaders);
+
+  },
+
+
+  /*
+   * Cron trigger: monthly budget roll-up (see BUDGET ROLL-UP).
+   */
+  async scheduled(event, env, ctx) {
+
+    ctx.waitUntil(
+      rollUpBudget(env)
+        .then(result => console.log("Budget roll-up:", JSON.stringify(result)))
+        .catch(error => console.error("Budget roll-up failed:", String(error)))
+    );
 
   }
 
@@ -393,9 +257,10 @@ export default {
    read page by page.
    ========================================================= */
 
-const RECIPES_CACHE_KEY = "https://daily-life-cache.internal/recipes";
+// "-v2": the payload shape changed in v0.3.0, so never serve an older cached shape.
+const RECIPES_CACHE_KEY = "https://daily-life-cache.internal/recipes-v2";
 
-async function fetchAllRecords(tableId, env) {
+async function fetchAllRecords(tableId, env, extraParams = {}) {
 
   const records = [];
   let offset = null;
@@ -407,11 +272,15 @@ async function fetchAllRecords(tableId, env) {
 
     params.set("pageSize", "100");
 
+    for (const [key, value] of Object.entries(extraParams)) {
+      params.set(key, value);
+    }
+
     if (offset) {
       params.set("offset", offset);
     }
 
-    const response = await fetch(
+    const response = await airtableFetch(env, 
       `https://api.airtable.com/v0/${BASE_ID}/${tableId}?${params}`,
       {
         headers: {
@@ -432,9 +301,10 @@ async function fetchAllRecords(tableId, env) {
     offset = data.offset || null;
     pages++;
 
-  } while (offset && pages < 10);
+  // shortcut: stops at 5,000 rows; callers that must see everything check `truncated`
+  } while (offset && pages < 50);
 
-  return { records };
+  return { records, truncated: Boolean(offset) };
 
 }
 
@@ -491,7 +361,14 @@ async function getRecipes(
 
       const recipes =
         recipeResult.records.map(record =>
-          normaliseRecipe(record, linesByRecipe.get(record.id) || [])
+          normaliseRecipe(
+            record,
+            mergeIngredientLines(
+              linesByRecipe.get(record.id) || [],
+              (record.fields || {})["Ingredients"] || [],
+              ingredientNames
+            )
+          )
         );
 
       return { data: { recipes } };
@@ -538,6 +415,47 @@ async function getRecipe(
   return json({
     recipe
   }, 200, corsHeaders);
+
+}
+
+
+/* =========================================================
+   MERGE INGREDIENT LINES
+   =========================================================
+   Quantity rows come first. Any ingredient linked to the recipe
+   (Recipes > Ingredients) that has no quantity row yet is added
+   as a name-only line, so older recipes still show ingredient
+   names (without quantities) rather than nothing.
+   ========================================================= */
+
+function mergeIngredientLines(lines, linkedIds, ingredientNames) {
+
+  const covered = new Set(lines.map(line => line.ingredientId).filter(Boolean));
+
+  const extras = [];
+
+  for (const id of linkedIds) {
+
+    const name = ingredientNames.get(id);
+
+    if (!name || covered.has(id)) continue;
+
+    covered.add(id);
+
+    extras.push({
+      id,
+      ingredientId: id,
+      name,
+      quantity: null,
+      unit: null,
+      preparation: null,
+      optional: false,
+      text: name
+    });
+
+  }
+
+  return [...lines, ...extras];
 
 }
 
@@ -618,6 +536,7 @@ function normaliseIngredientLine(record, ingredientNames) {
 
   return {
     id: record.id,
+    ingredientId,
     name,
     quantity: quantity ?? null,
     unit: unit || null,
@@ -750,7 +669,18 @@ function normaliseRecipe(record, ingredients = []) {
 
 /* =========================================================
    MEAL PLAN
+   =========================================================
+   Weekly plan table: Date, Meal, Recipe (link), Planned servings,
+   Cooked?. One record per planned meal; a slot (day + meal) may
+   hold several records. Reads cover the last 14 days onwards in
+   one cached payload; every write purges that cache.
    ========================================================= */
+
+const MEAL_PLAN_CACHE_KEY = "https://daily-life-cache.internal/meal-plan";
+
+const MEAL_SLOTS = ["Breakfast", "Lunch", "Dinner"];
+
+const AIRTABLE_RECORD_ID = /^rec[A-Za-z0-9]{14}$/;
 
 async function getMealPlan(
   url,
@@ -759,92 +689,229 @@ async function getMealPlan(
 ) {
 
   return withCache(
-    `https://daily-life-cache.internal/meal-plan?${url.searchParams.toString()}`,
+    MEAL_PLAN_CACHE_KEY,
     CACHE_TTL.MEAL_PLAN,
     corsHeaders,
     async () => {
 
-      const params = new URLSearchParams();
+      const from = new Date();
 
-      params.set("pageSize", "100");
+      from.setUTCDate(from.getUTCDate() - 14);
 
+      const fromDate = from.toISOString().slice(0, 10);
 
-      /*
-       * Optional date range.
-       *
-       * Default = current week around today.
-       */
-      const start =
-        url.searchParams.get("start");
-
-      const end =
-        url.searchParams.get("end");
-
-
-      if (start && end) {
-
-        /*
-         * Weekly plan's date field is called "Date".
-         *
-         * Airtable formula is used rather than relying
-         * on the API's date filtering.
-         */
-
-        params.set(
-          "filterByFormula",
-          `AND(
-            IS_AFTER({Date}, '${start}'),
-            IS_BEFORE({Date}, '${end}')
-          )`
-        );
-
-      }
-
-
-      params.set(
-        "sort[0][field]",
-        "Date"
-      );
-
-      params.set(
-        "sort[0][direction]",
-        "asc"
-      );
-
-
-      const airtableUrl =
-        `https://api.airtable.com/v0/${BASE_ID}/${MEAL_PLAN_TABLE_ID}?${params}`;
-
-
-      const response = await fetch(
-        airtableUrl,
+      const result = await fetchAllRecords(
+        MEAL_PLAN_TABLE_ID,
+        env,
         {
-          headers: {
-            "Authorization":
-              `Bearer ${env.AIRTABLE_TOKEN}`
-          }
+          filterByFormula: `IS_AFTER({Date}, '${fromDate}')`,
+          "sort[0][field]": "Date",
+          "sort[0][direction]": "asc"
         }
       );
 
-
-      const data = await response.json();
-
-
-      if (!response.ok) {
-        return { error: "Airtable meal plan request failed", details: data, status: 502 };
+      if (result.error) {
+        return { error: "Airtable meal plan request failed", details: result.error, status: 502 };
       }
 
-
-      const mealPlan =
-        (data.records || []).map(
-          normaliseMealPlanRecord
-        );
-
-
-      return { data: { mealPlan } };
+      return {
+        data: {
+          mealPlan: result.records.map(normaliseMealPlanRecord)
+        }
+      };
 
     }
   );
+
+}
+
+
+/* =========================================================
+   MEAL PLAN — WRITE HELPERS
+   ========================================================= */
+
+/*
+ * Validates a request body and builds Airtable fields.
+ * `creating` = all of date, meal and recipeId are required.
+ * Meal is restricted to the three known slots so a typo can
+ * never create a stray select option.
+ */
+function mealPlanFields(body, creating) {
+
+  const fields = {};
+
+  if (creating || body.date !== undefined) {
+
+    const date = calendarDateOnly(body.date);
+
+    if (!date) {
+      return { error: "A valid date is required" };
+    }
+
+    fields["Date"] = date;
+
+  }
+
+  if (creating || body.meal !== undefined) {
+
+    if (!MEAL_SLOTS.includes(body.meal)) {
+      return { error: "Meal must be Breakfast, Lunch or Dinner" };
+    }
+
+    fields["Meal"] = body.meal;
+
+  }
+
+  if (creating || body.recipeId !== undefined) {
+
+    if (!AIRTABLE_RECORD_ID.test(String(body.recipeId || ""))) {
+      return { error: "A valid recipe is required" };
+    }
+
+    fields["Recipe"] = [body.recipeId];
+
+  }
+
+  if (body.servings !== undefined) {
+
+    if (body.servings === null) {
+
+      if (!creating) {
+        fields["Planned servings"] = null;
+      }
+
+    } else {
+
+      const servings = Number(body.servings);
+
+      if (!(servings > 0 && servings <= 100)) {
+        return { error: "Servings must be above 0 and at most 100" };
+      }
+
+      fields["Planned servings"] = Math.round(servings * 10) / 10;
+
+    }
+
+  }
+
+  if (body.cooked !== undefined) {
+    fields["Cooked?"] = Boolean(body.cooked);
+  }
+
+  return { fields };
+
+}
+
+
+/* =========================================================
+   RECORD WRITES (shared by the meal plan and to-dos)
+   ========================================================= */
+
+async function readJson(request, corsHeaders) {
+
+  try {
+    return { body: (await request.json()) || {} };
+  } catch {
+    return { response: json({ error: "Invalid JSON" }, 400, corsHeaders) };
+  }
+
+}
+
+/*
+ * Creates, updates or deletes one Airtable record, then purges the
+ * cached list. `failure` is the error message if Airtable refuses.
+ */
+async function writeRecord(env, corsHeaders, o) {
+
+  const response = await airtableFetch(env,
+    `https://api.airtable.com/v0/${BASE_ID}/${o.table}${o.recordId ? `/${o.recordId}` : ""}`,
+    {
+      method: o.method,
+      headers: {
+        "Authorization": `Bearer ${env.AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: o.fields ? JSON.stringify({ fields: o.fields, typecast: true }) : undefined
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    return json({ error: o.failure, details: data }, 502, corsHeaders);
+  }
+
+  await purgeCache(o.cacheKey);
+
+  return json(o.reply(data), o.status, corsHeaders);
+
+}
+
+const deleted = recordId => () => ({ ok: true, deleted: true, recordId });
+
+
+/* =========================================================
+   MEAL PLAN — CREATE / UPDATE / DELETE
+   ========================================================= */
+
+const writeMeal = (env, corsHeaders, options) =>
+  writeRecord(env, corsHeaders, {
+    table: MEAL_PLAN_TABLE_ID,
+    cacheKey: MEAL_PLAN_CACHE_KEY,
+    reply: data => ({ ok: true, entry: normaliseMealPlanRecord(data) }),
+    ...options
+  });
+
+async function createMealPlanEntry(request, env, corsHeaders) {
+
+  const read = await readJson(request, corsHeaders);
+  if (read.response) return read.response;
+
+  const parsed = mealPlanFields(read.body, true);
+
+  if (parsed.error) return json({ error: parsed.error }, 400, corsHeaders);
+
+  return writeMeal(env, corsHeaders, {
+    method: "POST",
+    fields: parsed.fields,
+    failure: "Airtable meal plan creation failed",
+    status: 201
+  });
+
+}
+
+async function updateMealPlanEntry(request, recordId, env, corsHeaders) {
+
+  const read = await readJson(request, corsHeaders);
+  if (read.response) return read.response;
+
+  const parsed = mealPlanFields(read.body, false);
+
+  if (parsed.error) return json({ error: parsed.error }, 400, corsHeaders);
+
+  if (Object.keys(parsed.fields).length === 0) {
+    return json({ error: "No recognised fields to update" }, 400, corsHeaders);
+  }
+
+  return writeMeal(env, corsHeaders, {
+    method: "PATCH",
+    recordId,
+    fields: parsed.fields,
+    failure: "Airtable meal plan update failed",
+    status: 200
+  });
+
+}
+
+function deleteMealPlanEntry(recordId, env, corsHeaders) {
+
+  return writeMeal(env, corsHeaders, {
+    method: "DELETE",
+    recordId,
+    failure: "Airtable meal plan deletion failed",
+    status: 200,
+    reply: deleted(recordId)
+  });
 
 }
 
@@ -857,100 +924,31 @@ function normaliseMealPlanRecord(record) {
 
   const fields = record.fields || {};
 
-
-  const date =
-    firstValue(
-      fields,
-      [
-        "Date",
-        "date"
-      ]
-    );
-
-
-  const meal =
-    firstValue(
-      fields,
-      [
-        "Meal",
-        "Category",
-        "Type"
-      ]
-    );
-
-
   const linkedRecipe =
-    firstValue(
-      fields,
-      [
-        "Recipe"
-      ]
-    );
-
-
-  let recipeName = null;
-
-  let recipeId = null;
-
-
-  /*
-   * Airtable linked records may be returned as:
-   *
-   * ["recXXXX"]
-   *
-   * or occasionally as expanded/display values.
-   */
-  if (Array.isArray(linkedRecipe)) {
-
-    recipeId =
-      linkedRecipe[0] || null;
-
-  } else if (linkedRecipe) {
-
-    recipeName =
-      String(linkedRecipe);
-
-  }
-
-
-  /*
-   * Airtable may expose the linked recipe name
-   * through a lookup field.
-   */
-  const lookupRecipe =
-    firstValue(
-      fields,
-      [
-        "Recipe Name",
-        "Recipe name",
-        "Recipe (Name)"
-      ]
-    );
-
-
-  if (!recipeName && lookupRecipe) {
-
-    recipeName =
-      Array.isArray(lookupRecipe)
-        ? lookupRecipe[0]
-        : lookupRecipe;
-
-  }
-
+    firstValue(fields, ["Recipe"]);
 
   return {
 
     id: record.id,
 
-    date,
+    date:
+      calendarDateOnly(
+        firstValue(fields, ["Date", "date"])
+      ),
 
-    meal,
+    meal:
+      firstValue(fields, ["Meal", "Category", "Type"]),
 
-    recipeId,
+    recipeId:
+      Array.isArray(linkedRecipe)
+        ? (linkedRecipe[0] || null)
+        : null,
 
-    recipeName,
+    servings:
+      firstValue(fields, ["Planned servings"]),
 
-    raw: fields
+    cooked:
+      Boolean(fields["Cooked?"])
 
   };
 
@@ -973,49 +971,16 @@ async function getTodos(
     corsHeaders,
     async () => {
 
-      const params = new URLSearchParams();
+      const result = await fetchAllRecords(TODOS_TABLE_ID, env, {
+        "sort[0][field]": "Due",
+        "sort[0][direction]": "asc"
+      });
 
-      params.set("pageSize", "100");
-
-
-      params.set(
-        "sort[0][field]",
-        "Due"
-      );
-
-      params.set(
-        "sort[0][direction]",
-        "asc"
-      );
-
-
-      const airtableUrl =
-        `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}?${params}`;
-
-
-      const response = await fetch(
-        airtableUrl,
-        {
-          headers: {
-            "Authorization":
-              `Bearer ${env.AIRTABLE_TOKEN}`
-          }
-        }
-      );
-
-
-      const data = await response.json();
-
-
-      if (!response.ok) {
-        return { error: "Airtable todos request failed", details: data, status: 502 };
+      if (result.error) {
+        return { error: "Airtable todos request failed", details: result.error, status: 502 };
       }
 
-
-      const todos =
-        (data.records || []).map(
-          normaliseTodo
-        );
+      const todos = result.records.map(normaliseTodo);
 
 
       return { data: { todos } };
@@ -1039,7 +1004,7 @@ async function getTodoOptions(env, corsHeaders) {
     async () => {
 
       const url = `https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`;
-      const response = await fetch(url, {
+      const response = await airtableFetch(env, url, {
         headers: { "Authorization": `Bearer ${env.AIRTABLE_TOKEN}` }
       });
       const data = await response.json();
@@ -1066,6 +1031,35 @@ async function getTodoOptions(env, corsHeaders) {
 
     }
   );
+
+}
+
+
+/*
+ * Rejects a status or category that isn't an Airtable option, so
+ * typecast can't create stray select choices. Returns an error
+ * message, or null when fine.
+ */
+async function checkTodoOptions(body, env, corsHeaders) {
+
+  if (!body.status && !body.category) return null;
+
+  const response = await getTodoOptions(env, corsHeaders);
+
+  // shortcut: if the schema can't be read, skip the check (the app falls back the same way)
+  if (!response.ok) return null;
+
+  const { categories, statuses } = await response.json();
+
+  if (body.status && statuses.length && !statuses.includes(body.status)) {
+    return `Unknown status "${body.status}"`;
+  }
+
+  if (body.category && categories.length && !categories.includes(body.category)) {
+    return `Unknown category "${body.category}"`;
+  }
+
+  return null;
 
 }
 
@@ -1137,33 +1131,10 @@ function normaliseTodo(record) {
         ]
       ),
 
-    bucket:
-      getTodoBucket(due),
-
-    raw: fields
-
   };
 
 }
 
-
-/* =========================================================
-   TODO BUCKET
-   ========================================================= */
-
-function getTodoBucket(due) {
-  const date = calendarDateOnly(due);
-  if (!date) return "upcoming";
-
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
-  const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1);
-  const tomorrow = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth()+1).padStart(2,"0")}-${String(tomorrowDate.getDate()).padStart(2,"0")}`;
-
-  if (date === today) return "today";
-  if (date === tomorrow) return "tomorrow";
-  return "upcoming";
-}
 
 // Due is a calendar date. Never construct a Date from YYYY-MM-DD for task logic.
 function calendarDateOnly(value) {
@@ -1173,351 +1144,97 @@ function calendarDateOnly(value) {
 }
 
 /* =========================================================
-   TODO — CREATE
+   TODO — CREATE / UPDATE / DELETE
    ========================================================= */
 
-async function createTodo(
-  request,
-  env,
-  corsHeaders
-) {
+const writeTodo = (env, corsHeaders, options) =>
+  writeRecord(env, corsHeaders, {
+    table: TODOS_TABLE_ID,
+    cacheKey: TODOS_CACHE_KEY,
+    reply: data => ({ ok: true, todo: normaliseTodo(data) }),
+    ...options
+  });
 
-  let body;
+async function createTodo(request, env, corsHeaders) {
 
+  const read = await readJson(request, corsHeaders);
+  if (read.response) return read.response;
 
-  try {
-
-    body =
-      await request.json();
-
-  } catch {
-
-    return json({
-      error: "Invalid JSON"
-    }, 400, corsHeaders);
-
-  }
-
+  const body = read.body;
 
   if (!body.task || !String(body.task).trim()) {
-
-    return json({
-      error: "Task is required"
-    }, 400, corsHeaders);
-
+    return json({ error: "Task is required" }, 400, corsHeaders);
   }
 
+  const optionError = await checkTodoOptions(body, env, corsHeaders);
 
-  const fields = {
+  if (optionError) return json({ error: optionError }, 400, corsHeaders);
 
-    "Task":
-      String(body.task).trim()
+  const fields = { "Task": String(body.task).trim() };
 
-  };
+  if (body.due) fields["Due"] = calendarDateOnly(body.due);
+  if (body.status) fields["Status"] = body.status;
+  if (body.category) fields["Category"] = body.category;
+  if (body.notes !== undefined) fields["Notes"] = String(body.notes);
 
+  // Related recipe is a linked-record field: the app sends relatedRecipeId.
+  if (body.relatedRecipeId) fields["Related recipe"] = [body.relatedRecipeId];
 
-  if (body.due) {
-
-    fields["Due"] =
-      calendarDateOnly(body.due);
-
-  }
-
-
-  if (body.status) {
-
-    fields["Status"] =
-      body.status;
-
-  }
-
-
-  if (body.category) {
-
-    fields["Category"] =
-      body.category;
-
-  }
-
-
-  if (body.notes !== undefined) {
-
-    fields["Notes"] =
-      String(body.notes);
-
-  }
-
-
-  /*
-   * Related recipe is a linked-record field.
-   *
-   * The front end can send:
-   *
-   * relatedRecipeId: "recXXXXXXXX"
-   */
-  if (body.relatedRecipeId) {
-
-    fields["Related recipe"] = [
-      body.relatedRecipeId
-    ];
-
-  }
-
-
-  const response = await fetch(
-    `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}`,
-    {
-      method: "POST",
-
-      headers: {
-
-        "Authorization":
-          `Bearer ${env.AIRTABLE_TOKEN}`,
-
-        "Content-Type":
-          "application/json"
-
-      },
-
-      body: JSON.stringify({
-        fields,
-        typecast: true
-      })
-
-    }
-  );
-
-
-  const data =
-    await response.json();
-
-
-  if (!response.ok) {
-
-    return json({
-      error: "Airtable todo creation failed",
-      details: data
-    }, 502, corsHeaders);
-
-  }
-
-
-  await purgeCache(TODOS_CACHE_KEY);
-
-
-  return json({
-
-    ok: true,
-
-    todo:
-      normaliseTodo(data),
-
-    record:
-      data
-
-  }, 201, corsHeaders);
+  return writeTodo(env, corsHeaders, {
+    method: "POST",
+    fields,
+    failure: "Airtable todo creation failed",
+    status: 201
+  });
 
 }
 
+async function updateTodo(request, recordId, env, corsHeaders) {
 
-/* =========================================================
-   TODO — UPDATE
-   ========================================================= */
+  const read = await readJson(request, corsHeaders);
+  if (read.response) return read.response;
 
-async function updateTodo(
-  request,
-  recordId,
-  env,
-  corsHeaders
-) {
+  const body = read.body;
 
-  let body;
+  const optionError = await checkTodoOptions(body, env, corsHeaders);
 
-
-  try {
-
-    body =
-      await request.json();
-
-  } catch {
-
-    return json({
-      error: "Invalid JSON"
-    }, 400, corsHeaders);
-
-  }
-
+  if (optionError) return json({ error: optionError }, 400, corsHeaders);
 
   const fields = {};
 
-
-  if (body.task !== undefined) {
-
-    fields["Task"] =
-      String(body.task);
-
-  }
-
-
-  if (body.due !== undefined) {
-
-    fields["Due"] =
-      calendarDateOnly(body.due);
-
-  }
-
-
-  if (body.status !== undefined) {
-
-    fields["Status"] =
-      body.status;
-
-  }
-
-
-  if (body.category !== undefined) {
-
-    fields["Category"] =
-      body.category;
-
-  }
-
-
-  if (body.notes !== undefined) {
-
-    fields["Notes"] =
-      body.notes;
-
-  }
-
+  if (body.task !== undefined) fields["Task"] = String(body.task);
+  if (body.due !== undefined) fields["Due"] = calendarDateOnly(body.due);
+  if (body.status !== undefined) fields["Status"] = body.status;
+  if (body.category !== undefined) fields["Category"] = body.category;
+  if (body.notes !== undefined) fields["Notes"] = body.notes;
 
   if (body.relatedRecipeId !== undefined) {
-
-    fields["Related recipe"] =
-      body.relatedRecipeId
-        ? [body.relatedRecipeId]
-        : [];
-
+    fields["Related recipe"] = body.relatedRecipeId ? [body.relatedRecipeId] : [];
   }
 
-
-  if (
-    Object.keys(fields).length === 0
-  ) {
-
-    return json({
-      error: "No recognised fields to update"
-    }, 400, corsHeaders);
-
+  if (Object.keys(fields).length === 0) {
+    return json({ error: "No recognised fields to update" }, 400, corsHeaders);
   }
 
-
-  const response = await fetch(
-    `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}/${recordId}`,
-    {
-      method: "PATCH",
-
-      headers: {
-
-        "Authorization":
-          `Bearer ${env.AIRTABLE_TOKEN}`,
-
-        "Content-Type":
-          "application/json"
-
-      },
-
-      body: JSON.stringify({
-        fields,
-        typecast: true
-      })
-
-    }
-  );
-
-
-  const data =
-    await response.json();
-
-
-  if (!response.ok) {
-
-    return json({
-      error: "Airtable todo update failed",
-      details: data
-    }, 502, corsHeaders);
-
-  }
-
-
-  await purgeCache(TODOS_CACHE_KEY);
-
-
-  return json({
-
-    ok: true,
-
-    todo:
-      normaliseTodo(data),
-
-    record:
-      data
-
-  }, 200, corsHeaders);
+  return writeTodo(env, corsHeaders, {
+    method: "PATCH",
+    recordId,
+    fields,
+    failure: "Airtable todo update failed",
+    status: 200
+  });
 
 }
 
+function deleteTodo(recordId, env, corsHeaders) {
 
-/* =========================================================
-   TODO — DELETE
-   ========================================================= */
-
-async function deleteTodo(
-  recordId,
-  env,
-  corsHeaders
-) {
-
-  const response = await fetch(
-    `https://api.airtable.com/v0/${BASE_ID}/${TODOS_TABLE_ID}/${recordId}`,
-    {
-      method: "DELETE",
-
-      headers: {
-        "Authorization":
-          `Bearer ${env.AIRTABLE_TOKEN}`
-      }
-
-    }
-  );
-
-
-  const data =
-    await response.json();
-
-
-  if (!response.ok) {
-
-    return json({
-      error: "Airtable todo deletion failed",
-      details: data
-    }, 502, corsHeaders);
-
-  }
-
-
-  await purgeCache(TODOS_CACHE_KEY);
-
-
-  return json({
-
-    ok: true,
-
-    deleted: true,
-
-    recordId
-
-  }, 200, corsHeaders);
+  return writeTodo(env, corsHeaders, {
+    method: "DELETE",
+    recordId,
+    failure: "Airtable todo deletion failed",
+    status: 200,
+    reply: deleted(recordId)
+  });
 
 }
 
@@ -1548,7 +1265,17 @@ async function getEvents(
     : 14;
 
 
-  const rangeStart = new Date();
+  // optional ?from=YYYY-MM-DD (the calendar's month and week views); defaults to today
+  const from = url.searchParams.get("from");
+
+  const rangeStart = /^\d{4}-\d{2}-\d{2}$/.test(from || "")
+    ? new Date(`${from}T00:00:00Z`)
+    : new Date();
+
+  if (Number.isNaN(rangeStart.getTime())) {
+    return json({ error: "Invalid from date" }, 400, corsHeaders);
+  }
+
   rangeStart.setUTCHours(0, 0, 0, 0);
 
   const rangeEnd = new Date(rangeStart);
@@ -1565,7 +1292,7 @@ async function getEvents(
   const cache = caches.default;
 
   const cacheKey = new Request(
-    `https://daily-life-cache.internal/events?days=${days}`,
+    "https://daily-life-cache.internal/events",
     { method: "GET" }
   );
 
@@ -1784,7 +1511,7 @@ function parseRrule(rrule) {
 const RRULE_DAY_INDEX = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 
 // Minimal RRULE expansion — see the file-level note above for scope.
-function expandRrule(rruleStr, dtstart, rangeEnd, exdates) {
+function expandRrule(rruleStr, dtstart, rangeStart, rangeEnd, exdates) {
 
   const rule = parseRrule(rruleStr);
   const freq = rule.FREQ;
@@ -1803,8 +1530,10 @@ function expandRrule(rruleStr, dtstart, rangeEnd, exdates) {
   const occurrences = [];
   let cursor = new Date(dtstart);
   let n = 0;
+  let steps = 0;
 
-  while (cursor <= stopDate && occurrences.length < hardCap) {
+  // hardCap counts only occurrences in range; `steps` bounds the walk from an old start date
+  while (cursor <= stopDate && occurrences.length < hardCap && steps++ < 20000) {
 
     if (count && n >= count) break;
 
@@ -1822,7 +1551,7 @@ function expandRrule(rruleStr, dtstart, rangeEnd, exdates) {
         occ.setUTCDate(occ.getUTCDate() + target);
         occ.setUTCHours(dtstart.getUTCHours(), dtstart.getUTCMinutes(), dtstart.getUTCSeconds(), 0);
 
-        if (occ >= dtstart && occ <= stopDate && !exSet.has(occ.toISOString())) {
+        if (occ >= dtstart && occ >= rangeStart && occ <= stopDate && !exSet.has(occ.toISOString())) {
           occurrences.push(occ);
         }
 
@@ -1836,7 +1565,7 @@ function expandRrule(rruleStr, dtstart, rangeEnd, exdates) {
 
     }
 
-    if (!exSet.has(cursor.toISOString())) occurrences.push(new Date(cursor));
+    if (cursor >= rangeStart && !exSet.has(cursor.toISOString())) occurrences.push(new Date(cursor));
     n++;
 
     const next = new Date(cursor);
@@ -1893,7 +1622,13 @@ function expandIcsEvents(text, rangeStart, rangeEnd) {
 
     }
 
-    const occurrences = expandRrule(ev.rrule, start.date, rangeEnd, ev.exdate || []);
+    const occurrences = expandRrule(
+      ev.rrule,
+      start.date,
+      new Date(rangeStart.getTime() - durationMs), // keep events already under way
+      rangeEnd,
+      ev.exdate || []
+    );
 
     for (const occStart of occurrences) {
 
@@ -2121,5 +1856,2211 @@ function secureCompare(a, b) {
 
 
   return result === 0;
+
+}
+
+
+/* =========================================================
+   API USAGE COUNTER
+   =========================================================
+   Airtable exposes no usage API, so the Worker counts its own
+   Airtable calls in Workers KV (binding: USAGE), one counter per
+   calendar month (UTC). It is an estimate: cache hits cost
+   nothing and are not counted, and two calls landing in
+   different Worker instances at the same instant can be missed.
+
+   AIRTABLE_USAGE_SEED (optional) is applied once, to the first
+   month the counter runs, to match Airtable's own Usage tab.
+   ========================================================= */
+
+const USAGE_DEFAULT_LIMIT = 1000;
+
+function usageMonthKey(date = new Date()) {
+  return `usage:${date.toISOString().slice(0, 7)}`;
+}
+
+// Serialises counting inside one Worker instance so the parallel
+// Airtable reads in one request don't overwrite each other.
+let usageChain = Promise.resolve();
+
+function countAirtableCall(env) {
+
+  if (!env.USAGE) return Promise.resolve();
+
+  usageChain = usageChain
+    .then(async () => {
+
+      const key = usageMonthKey();
+      let current = parseInt(await env.USAGE.get(key), 10);
+
+      if (!Number.isFinite(current)) {
+
+        current = 0;
+
+        if ((await env.USAGE.get("usage:seeded")) === null) {
+
+          current = Math.max(0, parseInt(env.AIRTABLE_USAGE_SEED, 10) || 0);
+
+          await env.USAGE.put("usage:seeded", new Date().toISOString());
+
+        }
+
+      }
+
+      await env.USAGE.put(key, String(current + 1));
+
+    })
+    .catch(error => console.warn("Usage counter failed:", String(error)));
+
+  return usageChain;
+
+}
+
+async function airtableFetch(env, url, options) {
+
+  await countAirtableCall(env);
+
+  return fetch(url, options);
+
+}
+
+async function getUsage(env, corsHeaders) {
+
+  const headers = { ...corsHeaders, "Cache-Control": "no-store" };
+
+  if (!env.USAGE) {
+
+    return json({
+      available: false,
+      reason: "The USAGE KV namespace is not bound to this Worker"
+    }, 200, headers);
+
+  }
+
+  const now = new Date();
+
+  const seeded = (await env.USAGE.get("usage:seeded")) !== null;
+
+  let used = parseInt(await env.USAGE.get(usageMonthKey(now)), 10);
+
+  if (!Number.isFinite(used)) {
+
+    used = seeded
+      ? 0
+      : Math.max(0, parseInt(env.AIRTABLE_USAGE_SEED, 10) || 0);
+
+  }
+
+  const limit =
+    parseInt(env.AIRTABLE_MONTHLY_LIMIT, 10) || USAGE_DEFAULT_LIMIT;
+
+  const nextMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
+  );
+
+  return json({
+    available: true,
+    used,
+    limit,
+    percent: Math.round((used / limit) * 100),
+    month: now.toISOString().slice(0, 7),
+    resetsOn: nextMonth.toISOString().slice(0, 10)
+  }, 200, headers);
+
+}
+
+
+/* =========================================================
+   RECIPE IMPORT FROM A URL
+   =========================================================
+   Preview: fetch the page, read its schema.org Recipe data
+   (JSON-LD), parse the ingredient lines, match them against the
+   Ingredients table. No Airtable writes.
+
+   Save: create missing Ingredients, the Recipe, then one
+   Ingredients Quantities row per line (batches of 10).
+
+   Plain JavaScript only: no external services.
+   ========================================================= */
+
+const IMPORT_MAX_BYTES = 2000000;
+const IMPORT_TIMEOUT_MS = 8000;
+const INGREDIENT_INDEX_KEY = "https://daily-life-cache.internal/ingredient-index-v1";
+
+/* ---- Caching helper that returns plain data ---- */
+
+async function cachedData(cacheUrl, ttlSeconds, loader) {
+
+  const cache = caches.default;
+  const key = new Request(cacheUrl, { method: "GET" });
+
+  const hit = await cache.match(key);
+
+  if (hit) return await hit.json();
+
+  const data = await loader();
+
+  await cache.put(
+    key,
+    new Response(JSON.stringify(data), {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": `max-age=${ttlSeconds}`
+      }
+    })
+  );
+
+  return data;
+
+}
+
+
+/* ---- URL safety ---- */
+
+function isPrivateHost(hostname) {
+
+  const h = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+
+  if (!h) return true;
+
+  if (
+    h === "localhost" ||
+    /\.(localhost|local|internal|lan|home|corp)$/.test(h)
+  ) return true;
+
+  // IPv6 literals are not needed for recipe sites
+  if (h.includes(":")) return true;
+
+  // single-label hosts (e.g. "intranet")
+  if (!h.includes(".")) return true;
+
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+
+  if (v4) {
+
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+
+    return (
+      a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127)
+    );
+
+  }
+
+  return false;
+
+}
+
+function validateImportUrl(raw) {
+
+  let parsed;
+
+  try {
+    parsed = new URL(String(raw || "").trim());
+  } catch {
+    return { error: "Enter a valid web address" };
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    return { error: "Only http and https links are supported" };
+  }
+
+  if (parsed.username || parsed.password) {
+    return { error: "Links with a username or password are not supported" };
+  }
+
+  if (parsed.port && !["80", "443"].includes(parsed.port)) {
+    return { error: "That port is not supported" };
+  }
+
+  if (isPrivateHost(parsed.hostname)) {
+    return { error: "That address can't be imported" };
+  }
+
+  return { url: parsed };
+
+}
+
+
+/* ---- Fetch the page (size and time capped) ---- */
+
+async function readCapped(response, maxBytes) {
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+
+  while (true) {
+
+    const { done, value } = await reader.read();
+
+    if (done) break;
+
+    total += value.length;
+
+    if (total > maxBytes) {
+      await reader.cancel();
+      break;
+    }
+
+    chunks.push(value);
+
+  }
+
+  const merged = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return new TextDecoder("utf-8").decode(merged);
+
+}
+
+async function fetchRecipePage(url) {
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IMPORT_TIMEOUT_MS);
+
+  try {
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; DailyLifeRecipeImport/1.0)",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-GB,en;q=0.9"
+      },
+      redirect: "follow",
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return { error: `The site returned an error (${response.status})` };
+    }
+
+    const finalUrl = response.url || url.toString();
+
+    if (validateImportUrl(finalUrl).error) {
+      return { error: "The link redirected somewhere that can't be imported" };
+    }
+
+    const type = response.headers.get("content-type") || "";
+
+    if (!/html|xml/i.test(type)) {
+      return { error: "That link isn't a web page" };
+    }
+
+    return { html: await readCapped(response, IMPORT_MAX_BYTES), finalUrl };
+
+  } catch (error) {
+
+    return {
+      error: error?.name === "AbortError"
+        ? "The site took too long to respond"
+        : "Couldn't reach that site"
+    };
+
+  } finally {
+
+    clearTimeout(timer);
+
+  }
+
+}
+
+
+/* ---- Text helpers ---- */
+
+const NAMED_ENTITIES = {
+  amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ",
+  frac12: "½", frac14: "¼", frac34: "¾", deg: "°", ndash: "–", mdash: "—",
+  rsquo: "'", lsquo: "'", ldquo: "\"", rdquo: "\"", hellip: "…", eacute: "é"
+};
+
+function decodeEntities(value) {
+
+  return String(value ?? "")
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => safeCodePoint(parseInt(h, 16), m))
+    .replace(/&#(\d+);/g, (m, d) => safeCodePoint(parseInt(d, 10), m))
+    .replace(/&([a-z0-9]+);/gi, (m, n) => NAMED_ENTITIES[n.toLowerCase()] ?? m);
+
+}
+
+function safeCodePoint(code, fallback) {
+
+  try {
+    return String.fromCodePoint(code);
+  } catch {
+    return fallback;
+  }
+
+}
+
+function stripTags(value) {
+
+  return decodeEntities(
+    String(value ?? "")
+      .replace(/<\s*br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|li|div)>/gi, "\n")
+      .replace(/<[^>]*>/g, "")
+  );
+
+}
+
+function cleanLine(value) {
+  return stripTags(value).replace(/[ \t\u00a0]+/g, " ").trim();
+}
+
+
+/* ---- schema.org Recipe extraction ---- */
+
+function findRecipeNode(node) {
+
+  if (!node || typeof node !== "object") return null;
+
+  if (Array.isArray(node)) {
+
+    for (const item of node) {
+      const found = findRecipeNode(item);
+      if (found) return found;
+    }
+
+    return null;
+
+  }
+
+  const types = [].concat(node["@type"] || []);
+
+  if (types.some(t => typeof t === "string" && /(^|\/)Recipe$/i.test(t))) {
+    return node;
+  }
+
+  if (node["@graph"]) return findRecipeNode(node["@graph"]);
+
+  return null;
+
+}
+
+function extractRecipeNode(html) {
+
+  const pattern =
+    /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+
+  let match;
+
+  while ((match = pattern.exec(html)) !== null) {
+
+    let data = null;
+
+    const raw = match[1].trim();
+
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      try {
+        data = JSON.parse(raw.replace(/[\u0000-\u001F]+/g, " "));
+      } catch {
+        continue;
+      }
+    }
+
+    const found = findRecipeNode(data);
+
+    if (found) return found;
+
+  }
+
+  return null;
+
+}
+
+function firstImageUrl(value, baseUrl) {
+
+  if (!value) return null;
+
+  if (Array.isArray(value)) {
+
+    for (const item of value) {
+      const found = firstImageUrl(item, baseUrl);
+      if (found) return found;
+    }
+
+    return null;
+
+  }
+
+  const candidate =
+    typeof value === "string" ? value : (value.url || value.contentUrl);
+
+  if (typeof candidate !== "string") return null;
+
+  try {
+
+    const resolved = new URL(candidate, baseUrl);
+
+    return /^https?:$/.test(resolved.protocol) ? resolved.toString() : null;
+
+  } catch {
+
+    return null;
+
+  }
+
+}
+
+function parseYield(value) {
+
+  for (const item of [].concat(value ?? [])) {
+
+    const m = String(item ?? "").match(/\d+(?:[.,]\d+)?/);
+
+    if (m) {
+
+      const n = parseFloat(m[0].replace(",", "."));
+
+      if (n > 0 && n <= 100) return n;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+function parseIsoMinutes(value) {
+
+  const m = String(value || "").trim().match(
+    /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i
+  );
+
+  if (!m) return 0;
+
+  return (
+    (Number(m[1]) || 0) * 1440 +
+    (Number(m[2]) || 0) * 60 +
+    (Number(m[3]) || 0) +
+    Math.round((Number(m[4]) || 0) / 60)
+  );
+
+}
+
+function recipeMinutes(node) {
+
+  const total = parseIsoMinutes(node.totalTime);
+
+  const minutes = total || (
+    parseIsoMinutes(node.prepTime) + parseIsoMinutes(node.cookTime)
+  );
+
+  return minutes > 0 && minutes <= 1440 ? minutes : null;
+
+}
+
+function collectSteps(value, out = []) {
+
+  if (!value) return out;
+
+  if (typeof value === "string") {
+
+    stripTags(value)
+      .split(/\n+/)
+      .map(line => line.replace(/[ \t\u00a0]+/g, " ").trim())
+      .filter(Boolean)
+      .forEach(line => out.push(line));
+
+    return out;
+
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach(item => collectSteps(item, out));
+    return out;
+  }
+
+  if (typeof value === "object") {
+
+    if (value.itemListElement) {
+      collectSteps(value.itemListElement, out);
+    } else if (value.text || value.name) {
+      collectSteps(value.text || value.name, out);
+    }
+
+  }
+
+  return out;
+
+}
+
+
+/* ---- Ingredient line parser ---- */
+
+const UNICODE_FRACTIONS = {
+  "½": "1/2", "¼": "1/4", "¾": "3/4", "⅓": "1/3", "⅔": "2/3",
+  "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
+  "⅕": "1/5", "⅖": "2/5", "⅗": "3/5", "⅘": "4/5", "⅙": "1/6", "⅚": "5/6"
+};
+
+const UNIT_ALIASES = {
+  teaspoon: "tsp", teaspoons: "tsp", tsp: "tsp", tsps: "tsp",
+  tablespoon: "tbsp", tablespoons: "tbsp", tbsp: "tbsp", tbsps: "tbsp", tbs: "tbsp",
+  cup: "cup", cups: "cup",
+  ml: "ml", millilitre: "ml", millilitres: "ml", milliliter: "ml", milliliters: "ml",
+  l: "l", litre: "l", litres: "l", liter: "l", liters: "l",
+  g: "g", gram: "g", grams: "g", gramme: "g", grammes: "g",
+  kg: "kg", kilogram: "kg", kilograms: "kg",
+  oz: "oz", ounce: "oz", ounces: "oz",
+  lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
+  clove: "clove", cloves: "clove",
+  can: "can", cans: "can", tin: "can", tins: "can",
+  pinch: "pinch", pinches: "pinch",
+  bunch: "bunch", bunches: "bunch",
+  handful: "handful", handfuls: "handful",
+  slice: "slice", slices: "slice",
+  piece: "piece", pieces: "piece",
+  sprig: "sprig", sprigs: "sprig",
+  stick: "stick", sticks: "stick",
+  pack: "pack", packs: "pack", packet: "pack", packets: "pack", package: "pack",
+  jar: "jar", jars: "jar",
+  portion: "portion", portions: "portion", serving: "portion", servings: "portion",
+  dash: "dash", dashes: "dash",
+  splash: "splash", splashes: "splash"
+};
+
+// units that can stand without a number ("a pinch of salt")
+const LOOSE_UNITS = new Set(["pinch", "handful", "dash", "splash", "bunch", "sprig"]);
+
+// "garlic cloves" -> unit clove, name garlic
+const TRAILING_UNITS = new Set(["clove", "sprig", "stick", "slice"]);
+
+// quantity (unit) -> base quantity (unit) used for the shopping list
+const BASE_CONVERSIONS = {
+  g: ["g", 1], kg: ["g", 1000],
+  ml: ["ml", 1], l: ["ml", 1000],
+  tsp: ["ml", 5], tbsp: ["ml", 15], cup: ["ml", 240],
+  oz: ["g", 28.35], lb: ["g", 453.6]
+};
+
+const PREP_WORDS = new Set([
+  "finely", "roughly", "thinly", "coarsely", "freshly", "lightly",
+  "chopped", "diced", "sliced", "minced", "grated", "crushed", "peeled",
+  "shredded", "melted", "softened", "beaten", "cubed", "halved",
+  "trimmed", "rinsed", "drained", "toasted", "cooked"
+]);
+
+const KEY_STOP_WORDS = new Set([
+  "large", "medium", "small", "big", "fresh", "ripe", "whole", "organic"
+]);
+
+function toNumber(text) {
+
+  const t = String(text).trim().replace(",", ".");
+
+  let m = t.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+
+  if (m) return Number(m[1]) + Number(m[2]) / Number(m[3]);
+
+  m = t.match(/^(\d+)\/(\d+)$/);
+
+  if (m) return Number(m[1]) / Number(m[2]);
+
+  const n = Number(t);
+
+  return Number.isFinite(n) ? n : null;
+
+}
+
+function roundTo(value, places) {
+  const f = 10 ** places;
+  return Math.round(value * f) / f;
+}
+
+function toBaseQuantity(quantity, unit) {
+
+  if (quantity === null || quantity === undefined) {
+    return { baseQuantity: null, baseUnit: "" };
+  }
+
+  const conversion = BASE_CONVERSIONS[unit];
+
+  if (conversion) {
+    return {
+      baseQuantity: roundTo(quantity * conversion[1], 2),
+      baseUnit: conversion[0]
+    };
+  }
+
+  return { baseQuantity: quantity, baseUnit: unit || "" };
+
+}
+
+function parseIngredientLine(rawLine) {
+
+  const original = cleanLine(rawLine);
+
+  let s = original;
+
+  for (const [glyph, fraction] of Object.entries(UNICODE_FRACTIONS)) {
+    s = s.split(glyph).join(` ${fraction}`);
+  }
+
+  s = s
+    .replace(/[–—]/g, "-")
+    .replace(/^[\s•*\-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  let optional = false;
+
+  if (/\boptional\b/i.test(s)) {
+    optional = true;
+    s = s
+      .replace(/\(\s*optional\s*\)/gi, "")
+      .replace(/,?\s*\boptional\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // quantity (first number of a range is used)
+  let quantity = null;
+
+  const qm = s.match(
+    /^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:[.,]\d+)?)(?:\s*-\s*(?:\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:[.,]\d+)?))?\s*/
+  );
+
+  if (qm) {
+    quantity = toNumber(qm[1]);
+    s = s.slice(qm[0].length);
+  } else if (/^(an?|one)\s+/i.test(s)) {
+    quantity = 1;
+    s = s.replace(/^(an?|one)\s+/i, "");
+  }
+
+  const notes = [];
+
+  // parentheses, e.g. "1 (400g) can tomatoes"
+  s = s.replace(/\(([^)]*)\)/g, (m, inner) => {
+    if (inner.trim()) notes.push(inner.trim());
+    return " ";
+  }).replace(/\s+/g, " ").trim();
+
+  // unit
+  let unit = "";
+
+  const um = s.match(/^([A-Za-z]+)\.?(?=\s|$|,)/);
+
+  if (um) {
+
+    const canonical = UNIT_ALIASES[um[1].toLowerCase()];
+
+    if (canonical && (quantity !== null || LOOSE_UNITS.has(canonical))) {
+
+      unit = canonical;
+
+      if (quantity === null) quantity = 1;
+
+      s = s.slice(um[0].length).trim();
+
+    }
+
+  }
+
+  s = s.replace(/^of\s+/i, "");
+
+  // comma -> preparation
+  const comma = s.indexOf(",");
+
+  if (comma >= 0) {
+    const tail = s.slice(comma + 1).trim();
+    if (tail) notes.push(tail);
+    s = s.slice(0, comma).trim();
+  }
+
+  // leading preparation words, e.g. "finely chopped onion"
+  const words = s.split(" ").filter(Boolean);
+  const leading = [];
+
+  while (
+    words.length > 1 &&
+    PREP_WORDS.has(words[0].toLowerCase()) &&
+    // keep the canned product name "chopped tomatoes"
+    !(words.length === 2 && /^tomatoes?$/i.test(words[1]))
+  ) {
+    leading.push(words.shift());
+  }
+
+  if (leading.length) notes.push(leading.join(" ").toLowerCase());
+
+  // trailing unit words, e.g. "garlic cloves"
+  if (!unit && words.length > 1) {
+
+    const last = UNIT_ALIASES[words[words.length - 1].toLowerCase()];
+
+    if (last && TRAILING_UNITS.has(last)) {
+      unit = last;
+      words.pop();
+    }
+
+  }
+
+  let name = words.join(" ").replace(/[.;:]+$/, "").trim();
+
+  if (!name) name = original;
+
+  return {
+    original,
+    quantity,
+    unit,
+    name,
+    preparation: notes.join(", "),
+    optional
+  };
+
+}
+
+
+/* ---- Ingredient matching ---- */
+
+function singularWord(word) {
+
+  if (word.length > 3 && word.endsWith("ies")) return word.slice(0, -3) + "y";
+
+  if (word.length > 3 && /(o|ch|sh|x|ss)es$/.test(word)) return word.slice(0, -2);
+
+  if (
+    word.length > 3 &&
+    word.endsWith("s") &&
+    !word.endsWith("ss") &&
+    !word.endsWith("us")
+  ) return word.slice(0, -1);
+
+  return word;
+
+}
+
+function ingredientKey(name) {
+
+  const words = String(name || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\s-]/gu, " ")
+    .split(/\s+/)
+    .filter(word => word && !KEY_STOP_WORDS.has(word));
+
+  if (!words.length) return "";
+
+  words[words.length - 1] = singularWord(words[words.length - 1]);
+
+  return words.join(" ");
+
+}
+
+async function getIngredientIndex(env) {
+
+  return cachedData(INGREDIENT_INDEX_KEY, 600, async () => {
+
+    const result = await fetchAllRecords(INGREDIENTS_TABLE_ID, env);
+
+    if (result.error) {
+      throw new Error("Airtable ingredients request failed");
+    }
+
+    return result.records
+      .map(record => ({
+        id: record.id,
+        name: firstValue(record.fields || {}, ["Name"])
+      }))
+      .filter(item => item.name);
+
+  });
+
+}
+
+
+/* ---- POST /api/import/preview ---- */
+
+async function importPreview(request, env, corsHeaders) {
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400, corsHeaders);
+  }
+
+  const checked = validateImportUrl(body?.url);
+
+  if (checked.error) {
+    return json({ error: checked.error }, 400, corsHeaders);
+  }
+
+  const page = await fetchRecipePage(checked.url);
+
+  if (page.error) {
+    return json({ error: page.error }, 422, corsHeaders);
+  }
+
+  const node = extractRecipeNode(page.html);
+
+  if (!node) {
+
+    return json({
+      error: "Couldn't find a recipe on that page. Some sites hide their recipe data."
+    }, 422, corsHeaders);
+
+  }
+
+  const title = cleanLine(node.name);
+
+  const lines = []
+    .concat(node.recipeIngredient || [])
+    .map(cleanLine)
+    .filter(Boolean)
+    .slice(0, 80);
+
+  if (!title || !lines.length) {
+
+    return json({
+      error: "The recipe on that page looks incomplete"
+    }, 422, corsHeaders);
+
+  }
+
+  let index;
+
+  try {
+    index = await getIngredientIndex(env);
+  } catch {
+    return json({ error: "Couldn't read your Ingredients table" }, 502, corsHeaders);
+  }
+
+  const byKey = new Map(index.map(item => [ingredientKey(item.name), item]));
+
+  const ingredients = lines.map(line => {
+
+    const parsed = parseIngredientLine(line);
+
+    const match = byKey.get(ingredientKey(parsed.name));
+
+    return {
+      ...parsed,
+      isNew: !match,
+      matchedName: match ? match.name : null
+    };
+
+  });
+
+  const cuisine =
+    [].concat(node.recipeCuisine || []).find(c => typeof c === "string") || null;
+
+  return json({
+    recipe: {
+      title,
+      sourceUrl: page.finalUrl,
+      image: firstImageUrl(node.image, page.finalUrl),
+      servings: parseYield(node.recipeYield),
+      cookingTime: recipeMinutes(node),
+      cuisine: cuisine ? cleanLine(cuisine) : null,
+      steps: collectSteps(node.recipeInstructions).slice(0, 80),
+      ingredients
+    }
+  }, 200, corsHeaders);
+
+}
+
+
+/* ---- POST /api/import/save ---- */
+
+function importSaveError(message, status = 400) {
+  return { error: message, status };
+}
+
+function validateImportRecipe(recipe) {
+
+  if (!recipe || typeof recipe !== "object") {
+    return importSaveError("Missing recipe");
+  }
+
+  const title = String(recipe.title || "").trim();
+
+  if (!title || title.length > 200) {
+    return importSaveError("A title (up to 200 characters) is required");
+  }
+
+  const numberOrNull = (value, max) => {
+
+    if (value === null || value === undefined || value === "") return null;
+
+    const n = Number(value);
+
+    return n > 0 && n <= max ? n : undefined;
+
+  };
+
+  const servings = numberOrNull(recipe.servings, 100);
+  const cookingTime = numberOrNull(recipe.cookingTime, 1440);
+
+  if (servings === undefined) return importSaveError("Servings must be between 1 and 100");
+  if (cookingTime === undefined) return importSaveError("Cooking time must be between 1 and 1440 minutes");
+
+  let sourceUrl = null;
+
+  if (recipe.sourceUrl) {
+
+    const checked = validateImportUrl(recipe.sourceUrl);
+
+    if (checked.error) return importSaveError("The source link isn't valid");
+
+    sourceUrl = checked.url.toString();
+
+  }
+
+  let image = null;
+
+  if (recipe.image) {
+
+    const checked = validateImportUrl(recipe.image);
+
+    image = checked.error ? null : checked.url.toString();
+
+  }
+
+  const steps = [].concat(recipe.steps || [])
+    .map(step => String(step).trim())
+    .filter(Boolean)
+    .slice(0, 80);
+
+  if (steps.some(step => step.length > 2000)) {
+    return importSaveError("A method step is too long");
+  }
+
+  const lines = [];
+
+  for (const raw of [].concat(recipe.ingredients || []).slice(0, 80)) {
+
+    const name = String(raw?.name || "").trim();
+
+    if (!name) continue;
+
+    if (name.length > 120) return importSaveError("An ingredient name is too long");
+
+    let quantity = null;
+
+    if (raw.quantity !== null && raw.quantity !== undefined && raw.quantity !== "") {
+
+      quantity = Number(raw.quantity);
+
+      if (!(quantity >= 0 && quantity <= 100000)) {
+        return importSaveError(`Check the quantity for "${name}"`);
+      }
+
+    }
+
+    const unit = String(raw.unit || "").trim().slice(0, 20);
+
+    lines.push({
+      name,
+      quantity,
+      unit,
+      preparation: String(raw.preparation || "").trim().slice(0, 200),
+      optional: Boolean(raw.optional)
+    });
+
+  }
+
+  if (!lines.length) return importSaveError("Add at least one ingredient");
+
+  return {
+    value: {
+      title,
+      servings,
+      cookingTime,
+      cuisine: recipe.cuisine ? String(recipe.cuisine).slice(0, 80) : null,
+      sourceUrl,
+      image,
+      steps,
+      lines
+    }
+  };
+
+}
+
+async function airtableBatchCreate(env, tableId, records) {
+
+  const response = await airtableFetch(
+    env,
+    `https://api.airtable.com/v0/${BASE_ID}/${tableId}`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ records, typecast: true })
+    }
+  );
+
+  const data = await response.json();
+
+  return { ok: response.ok, status: response.status, data };
+
+}
+
+async function importSave(request, env, corsHeaders) {
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400, corsHeaders);
+  }
+
+  const checked = validateImportRecipe(body?.recipe);
+
+  if (checked.error) {
+    return json({ error: checked.error }, checked.status, corsHeaders);
+  }
+
+  const recipe = checked.value;
+
+  /*
+   * 1. Match ingredients, create the missing ones (batches of 10)
+   */
+  let index;
+
+  try {
+    index = await getIngredientIndex(env);
+  } catch {
+    return json({ error: "Couldn't read your Ingredients table" }, 502, corsHeaders);
+  }
+
+  const idByKey = new Map(index.map(item => [ingredientKey(item.name), item.id]));
+
+  const toCreate = new Map();
+
+  for (const line of recipe.lines) {
+
+    const key = ingredientKey(line.name) || line.name.toLowerCase();
+
+    if (!idByKey.has(key) && !toCreate.has(key)) {
+      toCreate.set(key, line.name);
+    }
+
+  }
+
+  const createKeys = [...toCreate.keys()];
+
+  for (let i = 0; i < createKeys.length; i += 10) {
+
+    const chunk = createKeys.slice(i, i + 10);
+
+    const result = await airtableBatchCreate(
+      env,
+      INGREDIENTS_TABLE_ID,
+      chunk.map(key => ({ fields: { "Name": toCreate.get(key) } }))
+    );
+
+    if (!result.ok) {
+
+      return json({
+        error: "Couldn't create new ingredients in Airtable",
+        details: result.data
+      }, 502, corsHeaders);
+
+    }
+
+    result.data.records.forEach((record, n) => idByKey.set(chunk[n], record.id));
+
+  }
+
+  const lineIds = recipe.lines.map(line =>
+    idByKey.get(ingredientKey(line.name) || line.name.toLowerCase())
+  );
+
+  /*
+   * 2. Create the recipe. If Airtable rejects Image or Cuisine
+   *    (unknown field or select option), retry without them.
+   */
+  const fields = {
+    "Name": recipe.title,
+    "Ingredients": [...new Set(lineIds)],
+    "Ingredients extracted": true
+  };
+
+  if (recipe.sourceUrl) fields["link"] = recipe.sourceUrl;
+  if (recipe.steps.length) fields["Recipe text"] = recipe.steps.join("\n");
+  if (recipe.servings !== null) fields["Default servings"] = recipe.servings;
+  if (recipe.cookingTime !== null) fields["Cooking time (mins)"] = recipe.cookingTime;
+  if (recipe.cuisine) fields["Cuisine"] = recipe.cuisine;
+  if (recipe.image) fields["Image"] = [{ url: recipe.image }];
+
+  const attempts = [[], ["Image"], ["Image", "Cuisine"]];
+
+  let created = null;
+  let lastError = null;
+  const dropped = [];
+
+  for (const drop of attempts) {
+
+    const attemptFields = { ...fields };
+
+    drop.forEach(name => delete attemptFields[name]);
+
+    const result = await airtableBatchCreate(
+      env,
+      RECIPES_TABLE_ID,
+      [{ fields: attemptFields }]
+    );
+
+    if (result.ok) {
+      created = result.data.records[0];
+      dropped.push(...drop.filter(name => fields[name] !== undefined));
+      break;
+    }
+
+    lastError = result.data;
+
+    if (result.status !== 422) break;
+
+  }
+
+  if (!created) {
+
+    return json({
+      error: "Couldn't save the recipe to Airtable",
+      details: lastError
+    }, 502, corsHeaders);
+
+  }
+
+  /*
+   * 3. One Ingredients Quantities row per line (batches of 10)
+   */
+  let warning = dropped.length
+    ? `Saved without: ${[...new Set(dropped)].join(", ")}`
+    : null;
+
+  for (let i = 0; i < recipe.lines.length; i += 10) {
+
+    const records = recipe.lines.slice(i, i + 10).map((line, n) => {
+
+      const { baseQuantity, baseUnit } = toBaseQuantity(line.quantity, line.unit);
+
+      const rowFields = {
+        "Name": [
+          line.name,
+          line.quantity !== null ? formatQuantity(line.quantity) : "",
+          line.unit
+        ].filter(Boolean).join(" "),
+        "Recipe": [created.id],
+        "Ingredient": [lineIds[i + n]]
+      };
+
+      if (line.quantity !== null) rowFields["Original Quantity"] = line.quantity;
+      if (line.unit) rowFields["Original Unit"] = line.unit;
+      if (baseQuantity !== null) rowFields["Quantity (base)"] = baseQuantity;
+      if (baseUnit) rowFields["Unit (base)"] = baseUnit;
+      if (line.preparation) rowFields["Preparation"] = line.preparation;
+      if (line.optional) rowFields["Optional?"] = true;
+
+      return { fields: rowFields };
+
+    });
+
+    const result = await airtableBatchCreate(
+      env,
+      INGREDIENT_QUANTITIES_TABLE_ID,
+      records
+    );
+
+    if (!result.ok) {
+
+      warning = "The recipe was saved but some ingredient quantities could not be";
+
+      break;
+
+    }
+
+  }
+
+  await purgeCache(RECIPES_CACHE_KEY);
+  await purgeCache(INGREDIENT_INDEX_KEY);
+
+  return json({
+    ok: true,
+    recipeId: created.id,
+    createdIngredients: createKeys.length,
+    warning
+  }, 201, corsHeaders);
+
+}
+
+
+/* =========================================================
+   FAMILY LINKS
+   =========================================================
+   Private links kept as Worker secrets (never in site code).
+   Only returned to callers that pass the app token.
+   ========================================================= */
+
+async function getLinks(env, corsHeaders) {
+
+  let driveUrl = null;
+
+  try {
+
+    const parsed = new URL(String(env.FAMILY_DRIVE_URL || "").trim());
+
+    if (parsed.protocol === "https:") driveUrl = parsed.toString();
+
+  } catch {
+    // not configured, or not a valid URL
+  }
+
+  return json({
+    driveUrl
+  }, 200, { ...corsHeaders, "Cache-Control": "no-store" });
+
+}
+
+
+
+/* =========================================================
+   BUDGET (v0.4.0, read-only)
+   =========================================================
+   Airtable tables: Budget categories, Transactions (current +
+   previous month, loaded from bank CSVs), Merchant rules and
+   Budget history (one total per category per closed month).
+
+   One cached payload (10 minutes, about 4 Airtable calls per
+   refresh) holds everything the Overview, Categories and Trends
+   screens need: totals, per-category spend and alerts, and the
+   monthly trend with category drift.
+
+   Spend rules:
+   - Account "Amex": a positive amount is spend.
+   - Any other account (HSBC): a negative amount is spend.
+   - Credits and refunds are ignored (not netted off).
+   - Rows ticked Exclude, and card payments / transfers matching
+     BUDGET_TRANSFER_PATTERN, are ignored.
+   - Category: the row's Category override, else the longest
+     matching Merchant rule, else the category named "Other".
+   ========================================================= */
+
+const BUDGET_CACHE_KEY = "https://daily-life-cache.internal/budget-v1";
+
+const BUDGET_TRANSFER_PATTERN =
+  /american express|amex payment|payment received|payment[ -]+thank you|internal transfer|^transfer|^tfr\b/i;
+
+const BUDGET_NEAR_RATIO = 0.8;     // "nearing budget" from 80% used
+const BUDGET_RISING_RATIO = 1.15;  // 15%+ above the same point last month
+const BUDGET_RISING_MIN_BASE = 20; // ignore tiny categories (GBP)
+const BUDGET_RISING_MIN_RISE = 15; // and tiny rises (GBP)
+const BUDGET_DRIFT_RISING = 0.15;
+const BUDGET_DRIFT_FALLING = -0.10;
+const BUDGET_TREND_MONTHS = 5;     // closed months shown in Trends
+
+async function getBudget(env, corsHeaders) {
+
+  return withCache(
+    BUDGET_CACHE_KEY,
+    CACHE_TTL.BUDGET,
+    corsHeaders,
+    async () => {
+
+      const [categories, transactions, rules, history] = await Promise.all([
+        fetchAllRecords(BUDGET_CATEGORIES_TABLE_ID, env),
+        fetchAllRecords(BUDGET_TRANSACTIONS_TABLE_ID, env),
+        fetchAllRecords(BUDGET_RULES_TABLE_ID, env),
+        fetchAllRecords(BUDGET_HISTORY_TABLE_ID, env)
+      ]);
+
+      const failed =
+        [categories, transactions, rules, history].find(r => r.error);
+
+      if (failed) {
+        return { error: "Airtable budget request failed", details: failed.error, status: 502 };
+      }
+
+      return {
+        data: buildBudget(
+          categories.records,
+          transactions.records,
+          rules.records,
+          history.records,
+          londonToday()
+        )
+      };
+
+    }
+  );
+
+}
+
+function londonToday() {
+
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+
+}
+
+function shiftMonth(key, n) {
+
+  const [y, m] = key.split("-").map(Number);
+
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
+
+}
+
+function daysInMonth(key) {
+
+  const [y, m] = key.split("-").map(Number);
+
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+}
+
+function roundMoney(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+function prepareBudgetCategories(categoryRecords, ruleRecords) {
+
+  const categories = categoryRecords
+    .map(record => ({
+      id: record.id,
+      name: String((record.fields || {})["Name"] || "").trim(),
+      budget: Number((record.fields || {})["Monthly budget"]) || 0,
+      order: Number((record.fields || {})["Order"]) || 999
+    }))
+    .filter(category => category.name)
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+
+  const byId = new Map(categories.map(category => [category.id, category]));
+
+  const fallback =
+    categories.find(category => category.name.toLowerCase() === "other") || null;
+
+  const rules = ruleRecords
+    .map(record => ({
+      text: String((record.fields || {})["Match text"] || "").trim().toLowerCase(),
+      categoryId: ((record.fields || {})["Category"] || [])[0]
+    }))
+    .filter(rule => rule.text && byId.has(rule.categoryId))
+    .sort((a, b) => b.text.length - a.text.length);
+
+  return { categories, byId, fallback, rules };
+
+}
+
+/*
+ * Transactions -> categorised spend rows (shared by the live
+ * figures and the monthly roll-up). `months` lists every month
+ * that has any transaction, spend or not.
+ */
+function categoriseSpend(transactionRecords, byId, rules, fallback) {
+
+  const spend = [];
+  const months = new Set();
+  let unmatched = 0;
+  let latest = null;
+
+  for (const record of transactionRecords) {
+
+    const fields = record.fields || {};
+
+    const date = calendarDateOnly(fields["Date"]);
+
+    if (date) months.add(date.slice(0, 7));
+    if (date && (!latest || date > latest)) latest = date;
+
+    if (fields["Exclude"]) continue;
+
+    const amount = Number(fields["Amount"]);
+
+    if (!date || !Number.isFinite(amount)) continue;
+
+    const description = String(fields["Description"] || "");
+
+    if (BUDGET_TRANSFER_PATTERN.test(description)) continue;
+
+    const account = String(fields["Account"] || "");
+
+    const out = account === "Amex" ? amount : -amount;
+
+    if (!(out > 0)) continue;
+
+    let category = byId.get((fields["Category override"] || [])[0]);
+
+    if (!category) {
+
+      const text = description.toLowerCase();
+      const rule = rules.find(item => text.includes(item.text));
+
+      category = rule ? byId.get(rule.categoryId) : null;
+
+    }
+
+    if (!category) {
+      unmatched++;
+      category = fallback;
+    }
+
+    if (!category) continue;
+
+    spend.push({
+      month: date.slice(0, 7),
+      day: Number(date.slice(8, 10)),
+      categoryId: category.id,
+      amount: out
+    });
+
+  }
+
+  return { spend, unmatched, months, latest };
+
+}
+
+function buildBudget(categoryRecords, transactionRecords, ruleRecords, historyRecords, today) {
+
+  const { categories, byId, fallback, rules } =
+    prepareBudgetCategories(categoryRecords, ruleRecords);
+
+  const { spend, unmatched, months: rawMonthSet, latest } =
+    categoriseSpend(transactionRecords, byId, rules, fallback);
+
+  const month = today.slice(0, 7);
+  const previous = shiftMonth(month, -1);
+  const dayNow = Number(today.slice(8, 10));
+
+  const sumByCategory = rows => {
+
+    const totals = new Map();
+
+    for (const row of rows) {
+      totals.set(row.categoryId, (totals.get(row.categoryId) || 0) + row.amount);
+    }
+
+    return totals;
+
+  };
+
+  const current = sumByCategory(spend.filter(row => row.month === month));
+
+  const previousSamePoint = sumByCategory(
+    spend.filter(row => row.month === previous && row.day <= dayNow)
+  );
+
+
+  /*
+   * Per-category status and alerts for the current month
+   */
+  const items = categories.map(category => {
+
+    const spent = roundMoney(current.get(category.id) || 0);
+    const before = roundMoney(previousSamePoint.get(category.id) || 0);
+
+    const percent =
+      category.budget > 0 ? Math.round(spent / category.budget * 100) : null;
+
+    const alerts = [];
+
+    if (category.budget > 0 && spent > category.budget) {
+      alerts.push({ type: "over", amount: roundMoney(spent - category.budget) });
+    } else if (category.budget > 0 && spent >= category.budget * BUDGET_NEAR_RATIO) {
+      alerts.push({ type: "near", percent });
+    }
+
+    if (
+      before >= BUDGET_RISING_MIN_BASE &&
+      spent >= before * BUDGET_RISING_RATIO &&
+      spent - before >= BUDGET_RISING_MIN_RISE
+    ) {
+      alerts.push({ type: "rising", percent: Math.round((spent / before - 1) * 100), previous: before });
+    }
+
+    return {
+      id: category.id,
+      name: category.name,
+      budget: category.budget,
+      spent,
+      percent,
+      previousSamePoint: before,
+      alerts
+    };
+
+  });
+
+  const severity = { over: 0, near: 1, rising: 2 };
+
+  const alertItems = items
+    .flatMap(item => item.alerts.map(alert => ({
+      categoryId: item.id,
+      category: item.name,
+      ...alert
+    })))
+    .sort((a, b) => severity[a.type] - severity[b.type]);
+
+  const totalBudget = roundMoney(items.reduce((n, item) => n + item.budget, 0));
+  const totalSpent = roundMoney(items.reduce((n, item) => n + item.spent, 0));
+  const totalBefore = roundMoney(items.reduce((n, item) => n + item.previousSamePoint, 0));
+
+
+  /*
+   * Closed months: Budget history rows, plus any month still held
+   * as raw transactions (the previous month, until it is rolled up).
+   */
+  const closed = new Map();
+
+  for (const record of historyRecords) {
+
+    const fields = record.fields || {};
+    const key = String(fields["Month"] || "").trim();
+    const categoryId = (fields["Category"] || [])[0];
+    const amount = Number(fields["Spent"]);
+
+    if (!/^\d{4}-\d{2}$/.test(key) || key >= month || !byId.has(categoryId) || !Number.isFinite(amount)) continue;
+
+    if (!closed.has(key)) closed.set(key, new Map());
+
+    closed.get(key).set(categoryId, roundMoney(amount));
+
+  }
+
+  const historyKeys = [...closed.keys()].sort();
+
+  const rawMonths = [...new Set(spend.map(row => row.month))]
+    .filter(key => key < month && !closed.has(key));
+
+  for (const key of rawMonths) {
+    closed.set(
+      key,
+      new Map(
+        [...sumByCategory(spend.filter(row => row.month === key))]
+          .map(([id, amount]) => [id, roundMoney(amount)])
+      )
+    );
+  }
+
+  const closedKeys = [...closed.keys()].sort().slice(-BUDGET_TREND_MONTHS);
+
+  const monthTotal = map => roundMoney([...map.values()].reduce((n, v) => n + v, 0));
+
+  const months = closedKeys.map(key => ({
+    month: key,
+    total: monthTotal(closed.get(key)),
+    partial: false
+  }));
+
+  months.push({ month, total: totalSpent, partial: true });
+
+
+  /*
+   * Drift: last closed month against the average of the three
+   * closed months before it. Needs four closed months.
+   */
+  const drift = [];
+
+  for (const category of categories) {
+
+    const series = closedKeys.map(key => closed.get(key).get(category.id) || 0);
+
+    if (!series.some(value => value > 0)) continue;
+
+    const last = series[series.length - 1];
+    let average = null;
+    let change = null;
+    let status = "na";
+
+    if (series.length >= 4) {
+
+      const base = series.slice(-4, -1);
+
+      average = roundMoney(base.reduce((n, v) => n + v, 0) / 3);
+
+      if (average < BUDGET_RISING_MIN_BASE && last < BUDGET_RISING_MIN_BASE) {
+        status = "steady";
+      } else {
+
+        change = average > 0 ? (last - average) / average : null;
+
+        status =
+          change === null ? "na"
+          : change >= BUDGET_DRIFT_RISING ? "rising"
+          : change <= BUDGET_DRIFT_FALLING ? "falling"
+          : "steady";
+
+      }
+
+    }
+
+    drift.push({
+      categoryId: category.id,
+      name: category.name,
+      series,
+      last,
+      average,
+      change: change === null ? null : Math.round(change * 100),
+      status
+    });
+
+  }
+
+  return {
+    month,
+    today,
+    dayOfMonth: dayNow,
+    daysInMonth: daysInMonth(month),
+    hasBudget: totalBudget > 0,
+    transactionCount: spend.filter(row => row.month === month).length,
+    unmatched,
+    fallbackName: fallback ? fallback.name : null,
+    lastTransaction: latest,
+    rollup: {
+      historyUpTo: historyKeys.length ? historyKeys[historyKeys.length - 1] : null,
+      pendingMonths: [...rawMonthSet].filter(key => key < previous).sort(),
+      needsOther: !fallback
+    },
+    totals: {
+      budget: totalBudget,
+      spent: totalSpent,
+      remaining: roundMoney(totalBudget - totalSpent),
+      percent: totalBudget > 0 ? Math.round(totalSpent / totalBudget * 100) : null,
+      previousSamePoint: totalBefore,
+      changePercent:
+        totalBefore > 0 ? Math.round((totalSpent / totalBefore - 1) * 100) : null
+    },
+    categories: items,
+    alerts: { count: alertItems.length, items: alertItems },
+    trends: {
+      closedMonths: closedKeys.length,
+      months,
+      drift,
+      closedKeys
+    }
+  };
+
+}
+
+
+
+/* =========================================================
+   BUDGET — SAVE CATEGORIES (v0.4.1)
+   =========================================================
+   Receives every category in display order. Existing ones
+   (with an id) are updated; new ones are created. Nothing is
+   deleted, so history and merchant rules stay linked. Airtable
+   accepts 10 records per request, so a typical save is one call.
+   ========================================================= */
+
+const BUDGET_MAX_CATEGORIES = 30;
+
+async function saveBudgetCategories(request, env, corsHeaders) {
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400, corsHeaders);
+  }
+
+  const list = Array.isArray(body?.categories) ? body.categories : null;
+
+  if (!list || !list.length || list.length > BUDGET_MAX_CATEGORIES) {
+    return json({
+      error: `Send between 1 and ${BUDGET_MAX_CATEGORIES} categories`
+    }, 400, corsHeaders);
+  }
+
+  const names = new Set();
+  const ids = new Set();
+  const rows = [];
+
+  for (const [index, item] of list.entries()) {
+
+    const name = String(item?.name || "").trim();
+
+    if (!name || name.length > 60) {
+      return json({
+        error: "Each category needs a name (up to 60 characters)"
+      }, 400, corsHeaders);
+    }
+
+    if (names.has(name.toLowerCase())) {
+      return json({ error: `"${name}" is used twice` }, 400, corsHeaders);
+    }
+
+    names.add(name.toLowerCase());
+
+    const raw = item.budget === null || item.budget === undefined || item.budget === ""
+      ? 0
+      : Number(item.budget);
+
+    if (!(raw >= 0 && raw <= 100000)) {
+      return json({ error: `Check the budget for "${name}"` }, 400, corsHeaders);
+    }
+
+    const id = item.id ? String(item.id) : null;
+
+    if (id && (!AIRTABLE_RECORD_ID.test(id) || ids.has(id))) {
+      return json({ error: "Invalid category ID" }, 400, corsHeaders);
+    }
+
+    if (id) ids.add(id);
+
+    rows.push({ id, name, budget: roundMoney(raw), order: index + 1 });
+
+  }
+
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${BUDGET_CATEGORIES_TABLE_ID}`;
+
+  const headers = {
+    "Authorization": `Bearer ${env.AIRTABLE_TOKEN}`,
+    "Content-Type": "application/json"
+  };
+
+  const toFields = row => ({
+    "Name": row.name,
+    "Monthly budget": row.budget,
+    "Order": row.order
+  });
+
+  const saved = [];
+  let failure = null;
+
+  const send = async (method, records) => {
+
+    const response = await airtableFetch(env, url, {
+      method,
+      headers,
+      body: JSON.stringify({ records, typecast: true })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      failure = data;
+      return false;
+    }
+
+    saved.push(...(data.records || []));
+
+    return true;
+
+  };
+
+  const updates = rows.filter(row => row.id);
+  const creates = rows.filter(row => !row.id);
+
+  for (let i = 0; i < updates.length && !failure; i += 10) {
+    await send(
+      "PATCH",
+      updates.slice(i, i + 10).map(row => ({ id: row.id, fields: toFields(row) }))
+    );
+  }
+
+  for (let i = 0; i < creates.length && !failure; i += 10) {
+    await send(
+      "POST",
+      creates.slice(i, i + 10).map(row => ({ fields: toFields(row) }))
+    );
+  }
+
+  // Purge even after a partial failure so the next read is fresh.
+  await purgeCache(BUDGET_CACHE_KEY);
+
+  if (failure) {
+    return json({
+      error: "Airtable budget save failed",
+      details: failure
+    }, 502, corsHeaders);
+  }
+
+  return json({
+    ok: true,
+    categories: saved
+      .map(record => ({
+        id: record.id,
+        name: record.fields["Name"],
+        budget: Number(record.fields["Monthly budget"]) || 0,
+        order: Number(record.fields["Order"]) || 999
+      }))
+      .sort((a, b) => a.order - b.order)
+  }, 200, corsHeaders);
+
+}
+
+
+
+/* =========================================================
+   BUDGET ROLL-UP (v0.4.2)
+   =========================================================
+   Run by a Cloudflare cron trigger (monthly on the 2nd, with a
+   retry on the 9th). Keeps the current and previous month as raw
+   transactions. Every older month is:
+
+     1. totalled per category, with the same rules as the live
+        figures, and written to Budget history as "pending" rows
+        (Month "2026-07*"; the app ignores them);
+     2. only then deleted from Transactions;
+     3. finalised: each pending row becomes the real history row
+        (Month "2026-07"), or is added to the existing one if rows
+        for that month were rolled up before (late-arriving data).
+
+   Safe to re-run: a run that stops part-way is finished by the
+   next one. A month is skipped, untouched, when its spend cannot
+   be categorised (no category named "Other"), or when pending
+   rows AND raw rows both exist (a delete stopped half-way; see
+   the release notes for the manual fix).
+   Cost: about 5 Airtable calls plus 1 per 10 rows deleted.
+   ========================================================= */
+
+const BUDGET_ROLLUP_MAX_MONTHS = 12;
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function airtableDeleteRecords(env, tableId, ids) {
+
+  const params = new URLSearchParams();
+
+  ids.forEach(id => params.append("records[]", id));
+
+  const response = await airtableFetch(
+    env,
+    `https://api.airtable.com/v0/${BASE_ID}/${tableId}?${params}`,
+    {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${env.AIRTABLE_TOKEN}` }
+    }
+  );
+
+  return { ok: response.ok, data: await response.json() };
+
+}
+
+async function airtableSend(env, tableId, method, records) {
+
+  const response = await airtableFetch(
+    env,
+    `https://api.airtable.com/v0/${BASE_ID}/${tableId}`,
+    {
+      method,
+      headers: {
+        "Authorization": `Bearer ${env.AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ records, typecast: true })
+    }
+  );
+
+  const data = await response.json();
+
+  return {
+    ok: response.ok && (data.records || []).length === records.length,
+    data
+  };
+
+}
+
+async function rollUpBudget(env, today = londonToday()) {
+
+  if (!env.AIRTABLE_TOKEN) {
+    return { status: "skipped", reason: "AIRTABLE_TOKEN is not configured" };
+  }
+
+  // Airtable allows about 5 requests a second per base
+  const pause = () => sleep(Number(env.BUDGET_ROLLUP_PAUSE_MS ?? 250));
+
+  // keep the current and previous month; everything before that is due
+  const cutoff = `${shiftMonth(today.slice(0, 7), -1)}-01`;
+
+  const [old, history] = await Promise.all([
+    fetchAllRecords(
+      BUDGET_TRANSACTIONS_TABLE_ID,
+      env,
+      {
+        filterByFormula: `IS_BEFORE({Date}, '${cutoff}')`,
+        "sort[0][field]": "Date",
+        "sort[0][direction]": "asc"
+      }
+    ),
+    fetchAllRecords(BUDGET_HISTORY_TABLE_ID, env)
+  ]);
+
+  if (old.error || history.error) {
+    return { status: "failed", step: "read tables", details: old.error || history.error };
+  }
+
+  const finalRows = new Map();
+  const pendingRows = new Map();
+
+  for (const record of history.records) {
+
+    const fields = record.fields || {};
+    const month = String(fields["Month"] || "").trim();
+    const categoryId = (fields["Category"] || [])[0];
+
+    if (!categoryId) continue;
+
+    if (/^\d{4}-\d{2}$/.test(month)) {
+      finalRows.set(`${month}|${categoryId}`, record);
+    } else if (/^\d{4}-\d{2}\*$/.test(month)) {
+      pendingRows.set(`${month.slice(0, 7)}|${categoryId}`, record);
+    }
+
+  }
+
+  const pendingMonths = new Set([...pendingRows.keys()].map(id => id.slice(0, 7)));
+
+  const byMonth = new Map();
+
+  for (const record of old.records) {
+
+    const date = calendarDateOnly((record.fields || {})["Date"]);
+
+    if (!date) continue;
+
+    const key = date.slice(0, 7);
+
+    if (!byMonth.has(key)) byMonth.set(key, []);
+
+    byMonth.get(key).push(record);
+
+  }
+
+  // The newest month fetched may be cut off; leave it for the next run.
+  if (old.truncated && byMonth.size) byMonth.delete([...byMonth.keys()].sort().pop());
+
+  if (!byMonth.size && !pendingMonths.size) {
+    return { status: "nothing due", cutoff };
+  }
+
+  const results = [];
+
+  const finish = async () => {
+
+    await purgeCache(BUDGET_CACHE_KEY);
+
+    return {
+      status: results.some(r => r.status === "failed") ? "failed" : "done",
+      cutoff,
+      months: results
+    };
+
+  };
+
+  /*
+   * Turn a month's pending rows into real history rows
+   */
+  const finalise = async key => {
+
+    const renames = [];
+    const merges = [];
+    const leftovers = [];
+
+    for (const [id, row] of pendingRows) {
+
+      if (!id.startsWith(`${key}|`)) continue;
+
+      const final = finalRows.get(`${key}|${id.slice(8)}`);
+
+      if (final) {
+
+        merges.push({
+          id: final.id,
+          fields: {
+            "Spent": roundMoney(
+              (Number(final.fields["Spent"]) || 0) +
+              (Number(row.fields["Spent"]) || 0)
+            )
+          }
+        });
+
+        leftovers.push(row.id);
+
+      } else {
+
+        renames.push({ id: row.id, fields: { "Month": key } });
+
+      }
+
+    }
+
+    for (const list of [renames, merges]) {
+
+      for (let i = 0; i < list.length; i += 10) {
+
+        const result = await airtableSend(env, BUDGET_HISTORY_TABLE_ID, "PATCH", list.slice(i, i + 10));
+
+        if (!result.ok) return { ok: false, details: result.data };
+
+        await pause();
+
+      }
+
+    }
+
+    for (let i = 0; i < leftovers.length; i += 10) {
+
+      const result = await airtableDeleteRecords(env, BUDGET_HISTORY_TABLE_ID, leftovers.slice(i, i + 10));
+
+      if (!result.ok) return { ok: false, details: result.data };
+
+      await pause();
+
+    }
+
+    return { ok: true };
+
+  };
+
+  /*
+   * A. Finish months whose raw rows were already deleted
+   */
+  for (const key of [...pendingMonths].sort()) {
+
+    if (byMonth.has(key)) {
+
+      results.push({
+        month: key,
+        status: "needs review",
+        reason: "pending history rows and transactions both exist"
+      });
+
+      continue;
+
+    }
+
+    const done = await finalise(key);
+
+    if (!done.ok) {
+      results.push({ month: key, status: "failed", step: "finalise history", details: done.details });
+      return await finish();
+    }
+
+    results.push({ month: key, status: "finalised" });
+
+  }
+
+  /*
+   * B. Roll up the months that are due
+   */
+  const due = [...byMonth.keys()]
+    .sort()
+    .filter(key => !pendingMonths.has(key))
+    .slice(0, BUDGET_ROLLUP_MAX_MONTHS);
+
+  if (!due.length) return await finish();
+
+  const [categories, ruleRecords] = await Promise.all([
+    fetchAllRecords(BUDGET_CATEGORIES_TABLE_ID, env),
+    fetchAllRecords(BUDGET_RULES_TABLE_ID, env)
+  ]);
+
+  if (categories.error || ruleRecords.error) {
+    results.push({ month: due[0], status: "failed", step: "read budget tables", details: categories.error || ruleRecords.error });
+    return await finish();
+  }
+
+  const { byId, fallback, rules } =
+    prepareBudgetCategories(categories.records, ruleRecords.records);
+
+  for (const key of due) {
+
+    const records = byMonth.get(key);
+
+    const { spend, unmatched } =
+      categoriseSpend(records, byId, rules, fallback);
+
+    if (unmatched > 0 && !fallback) {
+
+      results.push({
+        month: key,
+        status: "skipped",
+        reason: "no category named Other for uncategorised spend",
+        unmatched
+      });
+
+      continue;
+
+    }
+
+    const totals = new Map();
+
+    for (const row of spend) {
+      totals.set(row.categoryId, (totals.get(row.categoryId) || 0) + row.amount);
+    }
+
+    // 1. pending rows
+    const creates = [...totals].map(([categoryId, total]) => ({
+      fields: { "Month": `${key}*`, "Category": [categoryId], "Spent": roundMoney(total) }
+    }));
+
+    for (let i = 0; i < creates.length; i += 10) {
+
+      const result = await airtableSend(env, BUDGET_HISTORY_TABLE_ID, "POST", creates.slice(i, i + 10));
+
+      if (!result.ok) {
+        results.push({ month: key, status: "failed", step: "write history", details: result.data });
+        return await finish();
+      }
+
+      for (const record of result.data.records) {
+        pendingRows.set(`${key}|${(record.fields["Category"] || [])[0]}`, record);
+      }
+
+      await pause();
+
+    }
+
+    // 2. delete the raw rows
+    for (let i = 0; i < records.length; i += 10) {
+
+      const result = await airtableDeleteRecords(
+        env,
+        BUDGET_TRANSACTIONS_TABLE_ID,
+        records.slice(i, i + 10).map(record => record.id)
+      );
+
+      if (!result.ok) {
+        results.push({ month: key, status: "failed", step: "delete transactions", details: result.data });
+        return await finish();
+      }
+
+      await pause();
+
+    }
+
+    // 3. finalise
+    const done = await finalise(key);
+
+    if (!done.ok) {
+      results.push({ month: key, status: "failed", step: "finalise history", details: done.details });
+      return await finish();
+    }
+
+    results.push({
+      month: key,
+      status: "rolled up",
+      categories: totals.size,
+      deleted: records.length
+    });
+
+  }
+
+  return await finish();
 
 }

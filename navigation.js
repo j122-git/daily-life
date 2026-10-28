@@ -17,6 +17,7 @@
  *   #/recipe/<recipe-id>
  *   #/todo
  *   #/budget, #/budget-categories, #/budget-trends (tabs: replace history)
+ *   #/planner (calendar), #/todo, #/events (tabs: replace history)
  */
 
 (() => {
@@ -26,7 +27,10 @@
   let handlingPopState = false;
 
   // Pages that are tabs of one module (see navigate()).
-  const TAB_GROUPS = [["budget", "budget-categories", "budget-trends"]];
+  const TAB_GROUPS = [
+    ["budget", "budget-categories", "budget-trends"],
+    ["planner", "todo", "events"]
+  ];
 
   function routeFor(page, id) {
     if (page === "recipe" && id) {
