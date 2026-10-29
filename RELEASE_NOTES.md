@@ -1,3 +1,24 @@
+# Daily Life v0.6.1
+
+_28 October 2026_
+
+## Tablet and calendar polish
+
+- **Side rail logo** now matches the app icon: "Daily Life" stacked in dark green with the yellow sun.
+- **More** is hidden from the side rail on tablet. Settings is still reachable from the cog on the Home dashboard.
+- **Documents**: the link icon now sits next to the text instead of at the far edge.
+- **Calendar week view**: more space between each day's "+" button and its first item.
+
+## User action
+
+- Publish `index.html`, `app.js`, `styles.css` and `RELEASE_NOTES.md` (`?v=0.6.1`). Worker unchanged.
+
+## Notes
+
+- Phone layout unchanged, apart from the extra space in the calendar week view.
+- No Airtable schema changes.
+- Files changed: `index.html`, `app.js`, `styles.css`.
+
 # Daily Life v0.6.0
 
 _27 October 2026_

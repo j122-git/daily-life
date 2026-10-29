@@ -589,12 +589,14 @@ textarea.form-input{min-height:120px;resize:vertical;line-height:1.45}
   .shell{max-width:none;margin:0;padding:0 0 0 200px}
   .shell:not(:has(.bottom)){padding-left:0}
   .bottom{top:0;bottom:0;right:auto;margin:0;width:200px;max-width:none;height:auto;display:flex;flex-direction:column;gap:6px;padding:24px 14px calc(24px + env(safe-area-inset-bottom));border-top:0;border-right:1px solid var(--line);background:var(--paper)}
-  .rail-logo{display:block;font-family:Nunito,sans-serif;font-weight:800;font-size:26px;letter-spacing:-1px;padding:0 14px 18px}
+  .rail-logo{display:block;font-family:Nunito,sans-serif;font-weight:800;font-size:34px;line-height:.95;letter-spacing:-1px;color:#0a5a52;padding:0 14px 22px}
+  .rail-logo .icon{width:.6em;height:.6em;color:var(--sun);vertical-align:-.02em}
+  .nav-more{display:none}
   .nav{display:flex;align-items:center;gap:14px;padding:14px;border-radius:16px;font-size:17px;text-align:left}
   .nav .ni{margin:0;font-size:24px}
   .nav.active{background:var(--green2)}
   .rail-docs{margin-top:auto}
-  .rail-ext{margin-left:auto;font-size:18px;display:flex}
+  .rail-ext{font-size:18px;display:flex}
   .header{justify-content:flex-end;padding:20px 40px 0}
   .header .logo{display:none}
   .page{max-width:880px;margin:0 auto;padding:0 40px}
@@ -640,7 +642,7 @@ textarea.form-input{min-height:120px;resize:vertical;line-height:1.45}
 .cal-item .title{font-size:15px}
 .cal-day{background:var(--paper);border:1px solid #eee9df;border-radius:16px;padding:8px 16px;margin-bottom:6px}
 .cal-day.today{border:2px solid var(--green)}
-.cal-day-head{display:flex;justify-content:space-between;align-items:center;font-size:15px}
+.cal-day-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;margin-bottom:10px}
 .cal-day.today .cal-day-head{color:var(--green)}
 .cal-plus{width:44px;height:44px;border-radius:22px;background:var(--green2);color:#0b5f4d;font-size:22px;font-weight:700}
 .cal-opt{display:flex;align-items:center;gap:14px;width:100%;padding:12px 0;border-top:1px solid var(--line);background:none;color:var(--navy);text-align:left;text-decoration:none;font-size:16px}
