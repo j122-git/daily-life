@@ -1,3 +1,23 @@
+# Daily Life v0.6.2
+
+_29 October 2026_
+
+## Tablet fixes
+
+- **Home dashboard**: the Budget card now lists category alerts (over budget, nearing budget, rising), up to 3, worst first, with the same wording as the phone.
+- **Cooking view**: the **Add to plan** and **Focus mode** buttons keep their full width and no longer wrap. If there isn't room beside the title, they move below it.
+
+## User action
+
+- Publish `index.html`, `app.js`, `styles.css` and `RELEASE_NOTES.md` (`?v=0.6.2`). Worker unchanged.
+
+## Notes
+
+- Phone layout unchanged.
+- Alerts beyond the first 3 are only on the Budget screen.
+- No Airtable schema changes.
+- Files changed: `index.html`, `app.js`, `styles.css`.
+
 # Daily Life v0.6.1
 
 _28 October 2026_

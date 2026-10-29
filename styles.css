@@ -657,3 +657,9 @@ textarea.form-input{min-height:120px;resize:vertical;line-height:1.45}
   .cal-item .title{font-size:14px}
   .cal-tag{display:none}
 }
+
+/* Tablet fixes v0.6.2 */
+.dash-card .bd-alert{font-size:15px}
+.cook-head{flex-wrap:wrap}
+.cook-head>div:first-child{flex:1 1 300px}
+.cook-btn{flex:none;white-space:nowrap}
